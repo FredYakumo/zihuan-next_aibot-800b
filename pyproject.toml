@@ -1,0 +1,39 @@
+[project]
+name = "aibot-800b"
+version = "0.1.0"
+description = "A bot for daily helper and coding helper, support for adapter qq bot, web, edge devices"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "asyncio>=3.4.3",
+    "fastapi>=0.115.12",
+    "httpx>=0.28.1",
+    "markupsafe==2.1.2",
+    "openai>=1.82.0",
+    "openpyxl>=3.1.5",
+    "pandas>=2.2.3",
+    "pydantic>=2.11.5",
+    "pyyaml>=6.0.2",
+    "requests",
+    "socksio>=1.0.0",
+    "text2vec>=1.3.5",
+    "transformers>=4.52.3",
+    "uuid>=1.30",
+    "uvicorn>=0.34.2",
+    "weaviate-client>=4.14.4",
+    "py_eureka_client",
+    "torch>=2.7.0; sys_platform != 'darwin'",
+    "torchvision>=0.22.0; sys_platform != 'darwin'",
+    "torchaudio>=2.7.0; sys_platform != 'darwin'",
+    "torch; sys_platform == 'darwin'",
+    "ipython>=9.3.0",
+    "langchain"
+]
+
+[tool.uv]
+managed = true
+
+[[tool.uv.index]]
+name = "pytorch-cuda"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
