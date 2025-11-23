@@ -13,8 +13,14 @@ class BotAdapter:
                 logger.info("Connected to the bot server.")
                 while True:
                     message = await websocket.recv()
-                    logger.info(f"Received message: {message}")
+                    self.bot_event_process(message)
                     
         import asyncio
         asyncio.run(connect())
-        
+    
+    def bot_event_process(self, message: str | bytes):
+        logger.info(f"Received message: {message}")
+        if not isinstance(message, str):
+            logger.warning("Received non-string message, ignoring.")
+            return
+        # Process text message
