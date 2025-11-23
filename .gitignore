@@ -1,3 +1,4 @@
 uv.lock
 logs/
 **/__pycache__/
+config.yaml
