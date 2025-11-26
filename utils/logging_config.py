@@ -1,3 +1,40 @@
+# --- LOG LEVEL DISCOVERY ---
+def _discover_log_level() -> int:
+    """Resolve log level with the following priority:
+    1) Environment variable: LOG_LEVEL
+    2) config.yaml key: log_level
+    3) Default: logging.DEBUG
+    Returns the logging level constant (e.g., logging.INFO).
+    """
+    level_str = os.getenv("LOG_LEVEL")
+    if not level_str:
+        # Try config.yaml
+        try:
+            import yaml
+            project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+            cfg_path = os.path.join(project_root, "config.yaml")
+            if os.path.exists(cfg_path):
+                with open(cfg_path, "r", encoding="utf-8") as f:
+                    loaded = yaml.safe_load(f)
+                    if isinstance(loaded, dict):
+                        raw = loaded.get("log_level")
+                        if isinstance(raw, str) and raw.strip():
+                            level_str = raw.strip()
+        except Exception:
+            pass
+    if not level_str:
+        return logging.DEBUG
+    # Map string to logging level
+    level_str = level_str.strip().upper()
+    level_map = {
+        "CRITICAL": logging.CRITICAL,
+        "ERROR": logging.ERROR,
+        "WARNING": logging.WARNING,
+        "INFO": logging.INFO,
+        "DEBUG": logging.DEBUG,
+        "NOTSET": logging.NOTSET,
+    }
+    return level_map.get(level_str, logging.DEBUG)
 import logging
 import os
 from logging.handlers import TimedRotatingFileHandler
@@ -47,16 +84,15 @@ def _discover_log_dir() -> str:
 
 
 logger = logging.getLogger("zihuan")
-logger.setLevel(logging.DEBUG)
+log_level = _discover_log_level()
+logger.setLevel(log_level)
 
 log_dir = _discover_log_dir()
-# Expand ~ and make absolute for safety
 log_dir = os.path.abspath(os.path.expanduser(log_dir))
 
 try:
     os.makedirs(log_dir, exist_ok=True)
 except Exception:
-    # Fallback to local ./logs if the configured path is not creatable (e.g., permissions)
     fallback_dir = os.path.join(
         os.path.abspath(os.path.join(os.path.dirname(__file__), "..")), "logs"
     )
@@ -74,12 +110,12 @@ try:
         backupCount=7,
         encoding="utf-8",
     )
+    file_handler.setLevel(log_level)
 except Exception:
-    # As last resort, use a stream handler only
     file_handler = None
 
 console_handler = logging.StreamHandler()
-console_handler.setLevel(logging.DEBUG)
+console_handler.setLevel(log_level)
 
 formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 

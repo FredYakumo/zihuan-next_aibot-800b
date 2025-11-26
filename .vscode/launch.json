@@ -12,7 +12,8 @@
             "justMyCode": false,
             "cwd": "${workspaceFolder}",
             "env": {
-                "PYTHONPATH": "${workspaceFolder}"
+                "PYTHONPATH": "${workspaceFolder}",
+                "LOG_LEVEL": "DEBUG"
             },
             "console": "integratedTerminal"
         }
