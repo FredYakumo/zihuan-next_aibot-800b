@@ -4,3 +4,5 @@ logs/
 config.yaml
 docker/redis/data/
 docker/redis/redis.conf/
+target/
+Cargo.lock
