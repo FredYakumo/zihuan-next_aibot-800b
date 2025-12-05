@@ -94,29 +94,29 @@ async fn main() {
     // Load configuration from config.yaml, fallback to environment variables
     let config = load_config();
 
-    // Set REDIS_URL env var if not already set, using config.yaml fields
-    if std::env::var("REDIS_URL").is_err() {
-        let redis_url = if let Some(url) = config.redis_url.clone() {
-            Some(url)
-        } else if let (Some(host), Some(port)) = (config.redis_host.as_ref(), config.redis_port) {
-            let db = config.redis_db.unwrap_or(0);
-            let password = config.redis_password.as_deref().unwrap_or("");
-            if !password.is_empty() {
-                // Percent-encode password to safely include special characters like @ and #
-                let enc = pct_encode(password);
-                Some(format!("redis://:{}@{}:{}/{}", enc, host, port, db))
-            } else {
-                Some(format!("redis://{}:{}/{}", host, port, db))
-            }
+    // Build REDIS_URL from config.yaml fields if not already set in config
+    let redis_url = if let Some(url) = config.redis_url.clone() {
+        Some(url)
+    } else if std::env::var("REDIS_URL").is_ok() {
+        std::env::var("REDIS_URL").ok()
+    } else if let (Some(host), Some(port)) = (config.redis_host.as_ref(), config.redis_port) {
+        let db = config.redis_db.unwrap_or(0);
+        let password = config.redis_password.as_deref().unwrap_or("");
+        if !password.is_empty() {
+            // Percent-encode password to safely include special characters like @ and #
+            let enc = pct_encode(password);
+            Some(format!("redis://:{}@{}:{}/{}", enc, host, port, db))
         } else {
-            None
-        };
-        if let Some(url) = redis_url {
-            std::env::set_var("REDIS_URL", url);
-            info!("Set REDIS_URL from config.yaml");
-        } else {
-            warn!("No REDIS_URL or REDIS_HOST/PORT found in config.yaml; Redis will not be used.");
+            Some(format!("redis://{}:{}/{}", host, port, db))
         }
+    } else {
+        None
+    };
+
+    if redis_url.is_some() {
+        info!("Redis URL configured from config.yaml or environment");
+    } else {
+        warn!("No REDIS_URL or REDIS_HOST/PORT found in config.yaml; Redis will not be used.");
     }
 
     let bot_server_url = config.bot_server_url
@@ -128,7 +128,7 @@ async fn main() {
         .unwrap_or_default();
 
     // Create and start the bot adapter
-    let adapter = BotAdapter::new(bot_server_url, bot_server_token).await;
+    let adapter = BotAdapter::new(bot_server_url, bot_server_token, redis_url).await;
     info!("Bot adapter initialized, connecting to server...");
     if let Err(e) = adapter.start().await {
         error!("Bot adapter error: {}", e);

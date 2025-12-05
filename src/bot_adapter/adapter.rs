@@ -22,14 +22,14 @@ pub struct BotAdapter {
 }
 
 impl BotAdapter {
-    /// Create a new BotAdapter with the given WebSocket URL and authentication token
-    pub async fn new(url: impl Into<String>, token: impl Into<String>) -> Self {
+    /// Create a new BotAdapter with the given WebSocket URL, authentication token, and optional Redis URL
+    pub async fn new(url: impl Into<String>, token: impl Into<String>, redis_url: Option<String>) -> Self {
         let mut event_handlers: HashMap<MessageType, EventHandler> = HashMap::new();
         event_handlers.insert(MessageType::Private, event::process_friend_message);
         event_handlers.insert(MessageType::Group, event::process_group_message);
 
-        // Get Redis URL from env or use None
-        let redis_url = env::var("REDIS_URL").ok();
+        // Use provided redis_url, fallback to env var
+        let redis_url = redis_url.or_else(|| env::var("REDIS_URL").ok());
         let message_store = Arc::new(TokioMutex::new(MessageStore::new(redis_url.as_deref()).await));
 
         Self {
