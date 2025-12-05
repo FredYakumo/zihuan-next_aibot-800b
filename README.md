@@ -58,7 +58,3 @@ A bot for daily helper and coding helper.
 - "Rich Content Rendering" is more concise while maintaining specificity
 
 ---
-
-## Redis Password Configuration
-
-The Redis service is secured with a password set in `docker/redis/redis.conf` using the `requirepass` directive. See `docker/redis/REDIS_PASSWORD_README.md` for details.

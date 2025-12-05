@@ -28,7 +28,7 @@ impl MessageStore {
                         };
                     }
                     Err(e) => {
-                        error!("[MessageStore] Failed to connect to Redis: {}", e);
+                        error!("[MessageStore] Failed to connect to Redis {}: {}", url,e);
                         warn!("[MessageStore] Falling back to in-memory message store due to Redis connection error.");
                     }
                 },
