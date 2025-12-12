@@ -6,7 +6,7 @@ use log::{debug, error, info, warn};
 
 use super::event::{self, EventHandler};
 use super::models::{
-    MessageEvent, MessageType, RawMessageEvent,
+    convert_message_from_json, MessageEvent, MessageType, RawMessageEvent,
 };
 use crate::util::message_store::MessageStore;
 use std::env;
@@ -126,8 +126,19 @@ impl BotAdapter {
             }
         };
 
-        // Messages are already parsed from the top-level `message` array.
-        let message_list = raw_event.message.clone();
+        // Convert raw messages to typed messages
+        let message_list: Vec<_> = raw_event.message
+            .iter()
+            .filter_map(|raw| {
+                match convert_message_from_json(raw) {
+                    Ok(msg) => Some(msg),
+                    Err(e) => {
+                        warn!("Failed to convert message: {}", e);
+                        None
+                    }
+                }
+            })
+            .collect();
 
         // Create the MessageEvent
         let event = MessageEvent {

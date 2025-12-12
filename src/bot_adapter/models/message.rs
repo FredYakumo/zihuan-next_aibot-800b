@@ -146,6 +146,18 @@ impl MessageBase for ReplyMessage {
     }
 }
 
+/// Abstracts and encapsulates the raw messages received by the bot, refining them into structured fields convenient for LLM processing:
+/// - `content`: The merged readable body (text/@/reply, etc.), used directly for feeding to the model
+/// - `ref_content`: Contextual summary from reference/reply chains (e.g., replied content), used to supplement context
+/// - `is_at_me`: Whether the message @'s the bot itself, facilitating priority/trigger judgment
+/// - `at_target_list`: List of all @ targets in the message (QQ numbers, etc.), used for intent recognition and routing
+pub struct MessageProp {
+    pub content: Option<String>,
+    pub ref_content: Option<String>,
+    pub is_at_me: bool,
+    pub at_target_list: Vec<i64>
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
