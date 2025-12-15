@@ -143,10 +143,8 @@ impl BotAdapter {
         });
 
         // Dispatch to the appropriate handler
-        if let Some(handler) = self.event_handlers.get(&event.message_type) {
-            handler(&event);
-        } else {
-            warn!("No handler registered for message type: {}", event.message_type);
-        }
+        self.event_handlers.get(&event.message_type)
+            .map(|handler| handler(&event))
+            .unwrap_or_else(|| warn!("No handler registered for message type: {}", event.message_type));
     }
 }
