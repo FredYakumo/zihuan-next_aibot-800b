@@ -1,5 +1,6 @@
 mod bot_adapter;
 mod util;
+mod llm;
 
 use std::fs;
 use serde::Deserialize;
@@ -8,6 +9,8 @@ use log_util::log_util::LogUtil;
 use lazy_static::lazy_static;
 
 use bot_adapter::adapter::BotAdapter;
+
+
 
 lazy_static! {
     static ref BASE_LOG: LogUtil = LogUtil::new_with_path("zihuan_next_aibot", "logs");

@@ -11,3 +11,10 @@ MYSQL_PORT: 3306
 MYSQL_USER: zihuan_user
 MYSQL_PASSWORD: your_mysql_password
 MYSQL_DB: zihuan_aibot
+
+natural_language_model_api: http://api.your_llm_api.com/completion
+natural_language_model_api_key: sk-your-api-key
+natural_language_model_name: gpt-5.2
+agent_model_api: http://api.your_llm_api.com/completion
+agent_model_api_key: sk-your-api-key
+agent_model_name: "Claude Haiku 4.5"

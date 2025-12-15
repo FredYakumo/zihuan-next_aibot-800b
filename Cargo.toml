@@ -18,3 +18,4 @@ futures-util = "0.3"
 http = "1.0"
 
 redis = { version = "0.24", features = ["tokio-comp"] }
+reqwest = { version = "0.12.25", features = ["blocking", "json"] }
