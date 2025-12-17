@@ -4,13 +4,14 @@ pub mod brain;
 ///
 /// An agent consumes an event and produces an output/decision.
 ///
+use crate::bot_adapter::models::MessageEvent;
+
 pub trait Agent: Send + Sync {
-	type Event;
 	type Output;
 
 	fn name(&self) -> &'static str {
 		"agent"
 	}
 
-	fn on_event(&self, event: &Self::Event) -> Self::Output;
+	fn on_event(&self, event: &MessageEvent) -> Self::Output;
 }

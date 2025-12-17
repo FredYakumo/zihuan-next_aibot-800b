@@ -1,7 +1,7 @@
 use crate::bot_adapter::models::MessageEvent;
 use crate::llm::{LLMBase, InferenceParam, Message, MessageRole};
 use crate::llm::agent::Agent;
-use crate::llm::function_tools::FunctionTool;
+use crate::llm::function_tools::{FunctionTool, default_tools};
 
 use log::{debug, warn};
 use serde::{Deserialize, Serialize};
@@ -33,6 +33,8 @@ pub enum BrainOutcome {
 	Error { message: String, raw: String },
 }
 
+// Built-in tools are provided via function_tools::default_tools()
+
 /// Brain agent: receives events and makes a decision.
 ///
 /// Note:
@@ -48,9 +50,10 @@ pub struct BrainAgent {
 
 impl BrainAgent {
 	pub fn new(llm: Arc<dyn LLMBase + Send + Sync>) -> Self {
+		let tools = default_tools(llm.clone());
 		Self {
-			llm,
-			tools: Vec::new(),
+			llm: llm.clone(),
+			tools,
 			system_prompt: default_system_prompt(),
 			max_tool_rounds: 1,
 		}
@@ -248,14 +251,13 @@ Return STRICT JSON only: {{\"type\":\"reply\",\"content\":\"...\"}}\n",
 }
 
 impl Agent for BrainAgent {
-	type Event = MessageEvent;
 	type Output = BrainOutcome;
 
 	fn name(&self) -> &'static str {
 		"brain"
 	}
 
-	fn on_event(&self, event: &Self::Event) -> Self::Output {
+	fn on_event(&self, event: &MessageEvent) -> Self::Output {
 		self.run(event)
 	}
 }
@@ -312,7 +314,7 @@ mod tests {
 
 	#[test]
 	fn test_parse_json_lenient_direct() {
-		let raw = r#"{\"type\":\"reply\",\"content\":\"hi\"}"#;
+		let raw = r#"{"type":"reply","content":"hi"}"#;
 		let plan: BrainPlan = parse_json_lenient(raw).unwrap();
 		assert_eq!(plan, BrainPlan::Reply { content: "hi".to_string() });
 	}
