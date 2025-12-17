@@ -9,6 +9,9 @@
     - Messages: deserialized into typed models (`PlainTextMessage`, `AtTargetMessage`, `ReplayMessage`). See `src/bot_adapter/models/`.
     - State: recent raw messages cached via Redis (fallback to in-memory) for reply/context (`src/util/message_store.rs`).
     - LLM: `src/llm/*` provides HTTP-based chat API wrapper and agent scaffolding; integration tests are ignored by default and read `config.yaml`.
+- Language division:
+    - **Rust**: primary language for core business logic, bot adapters, message handling, LLM integration, and model applications.
+    - **Python**: used for database migrations (alembic) and data processing tasks.
 
 ## Critical workflows
 - Rust
