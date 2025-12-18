@@ -5,10 +5,10 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Debug main program",
+            "name": "Debug database maintenance",
             "type": "debugpy",
             "request": "launch",
-            "program": "${workspaceFolder}/main.py",
+            "module": "database.main",
             "justMyCode": false,
             "cwd": "${workspaceFolder}",
             "env": {
