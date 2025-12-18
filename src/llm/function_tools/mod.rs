@@ -47,13 +47,3 @@ pub use chat_history::ChatHistoryTool;
 pub use nl_reply::NaturalLanguageReplyTool;
 pub use code_writer::CodeWriterTool;
 
-/// Returns a default set of built-in tools for the BrainAgent
-pub fn default_tools(llm: Arc<dyn LLMBase + Send + Sync>) -> Vec<Arc<dyn FunctionTool>> {
-    vec![
-        Arc::new(ChatHistoryTool::new()),
-        Arc::new(NaturalLanguageReplyTool::new(llm.clone())),
-        Arc::new(CodeWriterTool::new(llm)),
-        Arc::new(MathTool::new()),
-    ]
-}
-

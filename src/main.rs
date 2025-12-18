@@ -7,6 +7,7 @@ use serde::Deserialize;
 use log::{info, error, warn};
 use log_util::log_util::LogUtil;
 use lazy_static::lazy_static;
+use clap::Parser;
 
 use bot_adapter::adapter::BotAdapter;
 
@@ -14,6 +15,14 @@ use bot_adapter::adapter::BotAdapter;
 
 lazy_static! {
     static ref BASE_LOG: LogUtil = LogUtil::new_with_path("zihuan_next_aibot", "logs");
+}
+
+
+#[derive(Parser, Debug)]
+#[command(author, version, about, long_about = None)]
+struct Args {
+    #[arg(short = 'l', long = "login-qq")]
+    qq_id: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -92,7 +101,13 @@ async fn main() {
     // Initialize logging using LogUtil
     LogUtil::init_with_logger(&BASE_LOG).expect("Failed to initialize logger");
 
+    // Parse command line arguments
+    let args = Args::parse();
+
     info!("zihuan_next_aibot-800b starting...");
+    if let Some(ref qq) = args.qq_id {
+        info!("登录的QQ号: {}", qq);
+    }
 
     // Load configuration from config.yaml, fallback to environment variables
     let config = load_config();

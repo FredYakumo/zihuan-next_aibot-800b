@@ -1,7 +1,9 @@
 use crate::bot_adapter::models::MessageEvent;
 use crate::llm::{LLMBase, InferenceParam, Message, MessageRole};
 use crate::llm::agent::Agent;
-use crate::llm::function_tools::{FunctionTool, default_tools};
+use crate::llm::function_tools::{
+    FunctionTool, ChatHistoryTool, NaturalLanguageReplyTool, CodeWriterTool, MathTool
+};
 
 use log::{debug, warn};
 use serde::{Deserialize, Serialize};
@@ -33,7 +35,15 @@ pub enum BrainOutcome {
 	Error { message: String, raw: String },
 }
 
-// Built-in tools are provided via function_tools::default_tools()
+/// Returns the default set of built-in tools for the BrainAgent
+pub fn brain_agent_list(llm: Arc<dyn LLMBase + Send + Sync>) -> Vec<Arc<dyn FunctionTool>> {
+    vec![
+        Arc::new(ChatHistoryTool::new()),
+        Arc::new(NaturalLanguageReplyTool::new(llm.clone())),
+        Arc::new(CodeWriterTool::new(llm)),
+        Arc::new(MathTool::new()),
+    ]
+}
 
 /// Brain agent: receives events and makes a decision.
 ///
@@ -50,7 +60,7 @@ pub struct BrainAgent {
 
 impl BrainAgent {
 	pub fn new(llm: Arc<dyn LLMBase + Send + Sync>) -> Self {
-		let tools = default_tools(llm.clone());
+		let tools = brain_agent_list(llm.clone());
 		Self {
 			llm: llm.clone(),
 			tools,
