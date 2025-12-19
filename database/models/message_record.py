@@ -13,4 +13,4 @@ class MessageRecord(Base):
     group_id = Column(String(64), nullable=True)
     group_name = Column(String(128), nullable=True)
     content = Column(String(2048), nullable=False)
-    at_target_list = Column(String(512), nullable=False)
+    at_target_list = Column(String(512), nullable=True)
