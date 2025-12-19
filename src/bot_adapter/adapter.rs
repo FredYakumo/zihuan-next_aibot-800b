@@ -1,10 +1,9 @@
 
-use std::collections::HashMap;
 use futures_util::StreamExt;
 use tokio_tungstenite::{connect_async, tungstenite::Message as WsMessage};
 use log::{debug, error, info, warn};
 
-use super::event::{self, EventHandler};
+use super::event;
 use super::models::{MessageEvent, MessageType, RawMessageEvent, Profile};
 use crate::util::url_utils::extract_host;
 use crate::util::message_store::MessageStore;
@@ -16,7 +15,6 @@ use std::sync::Arc;
 pub struct BotAdapter {
     url: String,
     token: String,
-    event_handlers: HashMap<MessageType, EventHandler>,
     message_store: Arc<TokioMutex<MessageStore>>,
     bot_profile: Option<Profile>,
 }
@@ -24,33 +22,27 @@ pub struct BotAdapter {
 impl BotAdapter {
 
     pub async fn new(url: impl Into<String>, token: impl Into<String>, redis_url: Option<String>, database_url: Option<String>, qq_id: String) -> Self {
-        let mut event_handlers: HashMap<MessageType, EventHandler> = HashMap::new();
-        event_handlers.insert(MessageType::Private, event::process_friend_message);
-        event_handlers.insert(MessageType::Group, event::process_group_message);
-
         // Use provided redis_url, fallback to env var
         let redis_url = redis_url.or_else(|| env::var("REDIS_URL").ok());
         
         // Use provided database_url, fallback to env var
-        let database_url = database_url.or_else(|| env::var("DATABASE_URL").ok());
+        let database_url = if database_url.is_some() {
+            database_url
+        } else {
+            env::var("DATABASE_URL").ok()
+        };
         
         let message_store = Arc::new(TokioMutex::new(MessageStore::new(redis_url.as_deref(), database_url.as_deref()).await));
 
         Self {
             url: url.into(),
             token: token.into(),
-            event_handlers,
             message_store,
             bot_profile: Some(Profile {
                 qq_id,
                 ..Default::default()
             }),
         }
-    }
-
-    /// Register a custom event handler for a specific message type
-    pub fn register_handler(&mut self, message_type: MessageType, handler: EventHandler) {
-        self.event_handlers.insert(message_type, handler);
     }
 
     /// Start the WebSocket connection and begin processing events
@@ -151,9 +143,19 @@ impl BotAdapter {
             store.store_message(&msg_id, &msg_str).await;
         });
 
-        // Dispatch to the appropriate handler
-        self.event_handlers.get(&event.message_type)
-            .map(|handler| handler(&event))
-            .unwrap_or_else(|| warn!("No handler registered for message type: {}", event.message_type));
+        // Dispatch to the appropriate handler based on message type
+        let store = self.message_store.clone();
+        match event.message_type {
+            MessageType::Private => {
+                tokio::spawn(async move {
+                    event::process_friend_message(&event, store).await;
+                });
+            }
+            MessageType::Group => {
+                tokio::spawn(async move {
+                    event::process_group_message(&event, store).await;
+                });
+            }
+        }
     }
 }
