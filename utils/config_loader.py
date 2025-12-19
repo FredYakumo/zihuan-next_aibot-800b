@@ -23,7 +23,7 @@ class Config(BaseModel):
     MYSQL_PORT: int = Field(default=3306, description="MySQL port")
     MYSQL_USER: str = Field(default="zihuan_user", description="MySQL user")
     MYSQL_PASSWORD: str = Field(default="your_mysql_password", description="MySQL password")
-    MYSQL_DB: str = Field(default="zihuan_db", description="MySQL database name")
+    MYSQL_DATABASE: str = Field(default="zihuan_database", description="MySQL database name")
 
     class Config:
         extra = "allow"  # Allow additional fields from YAML
@@ -33,7 +33,7 @@ class Config(BaseModel):
         # Generate SQLAlchemy URL from MYSQL_XXX fields
         return (
             f"mysql+pymysql://{self.MYSQL_USER}:{self.MYSQL_PASSWORD}" 
-            f"@{self.MYSQL_HOST}:{self.MYSQL_PORT}/{self.MYSQL_DB}"
+            f"@{self.MYSQL_HOST}:{self.MYSQL_PORT}/{self.MYSQL_DATABASE}"
         )
 
 
