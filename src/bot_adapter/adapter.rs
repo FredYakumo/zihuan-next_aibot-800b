@@ -23,14 +23,18 @@ pub struct BotAdapter {
 
 impl BotAdapter {
 
-    pub async fn new(url: impl Into<String>, token: impl Into<String>, redis_url: Option<String>, qq_id: String) -> Self {
+    pub async fn new(url: impl Into<String>, token: impl Into<String>, redis_url: Option<String>, database_url: Option<String>, qq_id: String) -> Self {
         let mut event_handlers: HashMap<MessageType, EventHandler> = HashMap::new();
         event_handlers.insert(MessageType::Private, event::process_friend_message);
         event_handlers.insert(MessageType::Group, event::process_group_message);
 
         // Use provided redis_url, fallback to env var
         let redis_url = redis_url.or_else(|| env::var("REDIS_URL").ok());
-        let message_store = Arc::new(TokioMutex::new(MessageStore::new(redis_url.as_deref()).await));
+        
+        // Use provided database_url, fallback to env var
+        let database_url = database_url.or_else(|| env::var("DATABASE_URL").ok());
+        
+        let message_store = Arc::new(TokioMutex::new(MessageStore::new(redis_url.as_deref(), database_url.as_deref()).await));
 
         Self {
             url: url.into(),

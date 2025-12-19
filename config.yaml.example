@@ -10,7 +10,7 @@ MYSQL_HOST: 127.0.0.1
 MYSQL_PORT: 3306
 MYSQL_USER: zihuan_user
 MYSQL_PASSWORD: your_mysql_password
-MYSQL_DB: zihuan_aibot
+MYSQL_DATABASE: zihuan_aibot
 
 natural_language_model_api: http://api.your_llm_api.com/completion
 natural_language_model_api_key: sk-your-api-key

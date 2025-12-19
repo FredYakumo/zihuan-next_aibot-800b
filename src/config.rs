@@ -18,6 +18,18 @@ pub struct Config {
     pub redis_password: Option<String>,
     #[serde(rename = "REDIS_URL")]
     pub redis_url: Option<String>,
+    #[serde(rename = "MYSQL_HOST")]
+    pub mysql_host: Option<String>,
+    #[serde(rename = "MYSQL_PORT")]
+    pub mysql_port: Option<u16>,
+    #[serde(rename = "MYSQL_USER")]
+    pub mysql_user: Option<String>,
+    #[serde(rename = "MYSQL_PASSWORD")]
+    pub mysql_password: Option<String>,
+    #[serde(rename = "MYSQL_DATABASE")]
+    pub mysql_database: Option<String>,
+    #[serde(rename = "DATABASE_URL")]
+    pub database_url: Option<String>,
 }
 
 /// Load configuration from config.yaml file
@@ -40,6 +52,12 @@ pub fn load_config() -> Config {
                         redis_db: None,
                         redis_password: None,
                         redis_url: None,
+                        mysql_host: None,
+                        mysql_port: None,
+                        mysql_user: None,
+                        mysql_password: None,
+                        mysql_database: None,
+                        database_url: None,
                     }
                 }
             }
@@ -54,6 +72,12 @@ pub fn load_config() -> Config {
                 redis_db: None,
                 redis_password: None,
                 redis_url: None,
+                mysql_host: None,
+                mysql_port: None,
+                mysql_user: None,
+                mysql_password: None,
+                mysql_database: None,
+                database_url: None,
             }
         }
     };
@@ -105,6 +129,37 @@ pub fn build_redis_url(config: &Config) -> Option<String> {
             return Some(format!("redis://:{}@{}:{}/{}", enc, host, port, db));
         } else {
             return Some(format!("redis://{}:{}/{}", host, port, db));
+        }
+    }
+    
+    None
+}
+
+/// Build MySQL URL from configuration
+pub fn build_mysql_url(config: &Config) -> Option<String> {
+    if let Some(url) = config.database_url.clone() {
+        return Some(url);
+    }
+    
+    if std::env::var("DATABASE_URL").is_ok() {
+        return std::env::var("DATABASE_URL").ok();
+    }
+    
+    if let (Some(user), Some(host), Some(port), Some(database)) = (
+        config.mysql_user.as_ref(),
+        config.mysql_host.as_ref(),
+        config.mysql_port,
+        config.mysql_database.as_ref(),
+    ) {
+        let password = config.mysql_password.as_deref().unwrap_or("");
+        if !password.is_empty() {
+            let enc = pct_encode(password);
+            return Some(format!(
+                "mysql://{}:{}@{}:{}/{}",
+                user, enc, host, port, database
+            ));
+        } else {
+            return Some(format!("mysql://{}@{}:{}/{}", user, host, port, database));
         }
     }
     
