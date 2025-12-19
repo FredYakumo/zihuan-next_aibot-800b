@@ -1,6 +1,6 @@
 use std::fs;
 use serde::Deserialize;
-use log::{info, error};
+use log::{info, error, warn};
 
 #[derive(Debug, Deserialize)]
 pub struct Config {
@@ -18,6 +18,10 @@ pub struct Config {
     pub redis_password: Option<String>,
     #[serde(rename = "REDIS_URL")]
     pub redis_url: Option<String>,
+    #[serde(rename = "REDIS_RECONNECT_MAX_ATTEMPTS")]
+    pub redis_reconnect_max_attempts: Option<u32>,
+    #[serde(rename = "REDIS_RECONNECT_INTERVAL_SECS")]
+    pub redis_reconnect_interval_secs: Option<u64>,
     #[serde(rename = "MYSQL_HOST")]
     pub mysql_host: Option<String>,
     #[serde(rename = "MYSQL_PORT")]
@@ -52,6 +56,8 @@ pub fn load_config() -> Config {
                         redis_db: None,
                         redis_password: None,
                         redis_url: None,
+                        redis_reconnect_max_attempts: None,
+                        redis_reconnect_interval_secs: None,
                         mysql_host: None,
                         mysql_port: None,
                         mysql_user: None,
@@ -72,6 +78,8 @@ pub fn load_config() -> Config {
                 redis_db: None,
                 redis_password: None,
                 redis_url: None,
+                redis_reconnect_max_attempts: None,
+                redis_reconnect_interval_secs: None,
                 mysql_host: None,
                 mysql_port: None,
                 mysql_user: None,
@@ -90,6 +98,32 @@ pub fn load_config() -> Config {
     
     if config.bot_server_token.is_empty() {
         config.bot_server_token = std::env::var("BOT_SERVER_TOKEN").unwrap_or_default();
+    }
+
+    if config.redis_reconnect_max_attempts.is_none() {
+        if let Ok(val) = std::env::var("REDIS_RECONNECT_MAX_ATTEMPTS") {
+            match val.parse() {
+                Ok(parsed) => config.redis_reconnect_max_attempts = Some(parsed),
+                Err(e) => warn!("REDIS_RECONNECT_MAX_ATTEMPTS Not Found ({}), using default 3", e),
+            }
+        }
+    }
+
+    if config.redis_reconnect_interval_secs.is_none() {
+        if let Ok(val) = std::env::var("REDIS_RECONNECT_INTERVAL_SECS") {
+            match val.parse() {
+                Ok(parsed) => config.redis_reconnect_interval_secs = Some(parsed),
+                Err(e) => warn!("Failed to parse REDIS_RECONNECT_INTERVAL_SECS ({}), using default 60s", e),
+            }
+        }
+    }
+
+    if config.redis_reconnect_max_attempts.is_none() {
+        config.redis_reconnect_max_attempts = Some(3);
+    }
+
+    if config.redis_reconnect_interval_secs.is_none() {
+        config.redis_reconnect_interval_secs = Some(60);
     }
     
     config

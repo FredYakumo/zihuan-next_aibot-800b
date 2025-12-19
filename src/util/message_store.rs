@@ -1,19 +1,28 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
+use tokio::time::{sleep, Duration};
 use redis::aio::Connection;
 use redis::{AsyncCommands, RedisError};
 use log::{info, warn, error, debug};
 use sqlx::mysql::MySqlPool;
 use sqlx::Row;
-use chrono::{DateTime, Local, NaiveDateTime};
+use chrono::{Local, NaiveDateTime};
+
+struct RedisState {
+    conn: Option<Connection>,
+    use_memory: bool,
+    reconnect_in_progress: bool,
+}
 
 /// MessageStore provides Redis-backed message storage with MySQL persistence and in-memory fallback
 pub struct MessageStore {
-    redis_conn: Option<Connection>,
+    redis_state: Arc<Mutex<RedisState>>,
+    redis_url: Option<String>,
+    reconnect_max_attempts: u32,
+    reconnect_interval_secs: u64,
     mysql_pool: Option<MySqlPool>,
     memory_store: Arc<Mutex<HashMap<String, String>>>,
-    use_memory: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -30,8 +39,21 @@ pub struct MessageRecord {
 
 impl MessageStore {
     /// Initialize the message store, try Redis first, MySQL for persistence, fallback to memory
-    pub async fn new(redis_url: Option<&str>, mysql_url: Option<&str>) -> Self {
+    pub async fn new(
+        redis_url: Option<&str>,
+        mysql_url: Option<&str>,
+        max_reconnect_attempts: Option<u32>,
+        reconnect_interval_secs: Option<u64>,
+    ) -> Self {
         let memory_store = Arc::new(Mutex::new(HashMap::new()));
+        let reconnect_max_attempts = max_reconnect_attempts.unwrap_or(3);
+        let reconnect_interval_secs = reconnect_interval_secs.unwrap_or(60);
+        let redis_url_owned = redis_url.map(|u| u.to_string());
+        let mut redis_state = RedisState {
+            conn: None,
+            use_memory: true,
+            reconnect_in_progress: false,
+        };
         
         let mysql_pool = if let Some(url) = mysql_url {
             match MySqlPool::connect(url).await {
@@ -48,18 +70,14 @@ impl MessageStore {
             warn!("[MessageStore] No MySQL URL provided. Persistent storage disabled.");
             None
         };
-        
+
         if let Some(url) = redis_url {
             match redis::Client::open(url) {
                 Ok(client) => match client.get_tokio_connection().await {
                     Ok(conn) => {
                         info!("[MessageStore] Connected to Redis at {}", url);
-                        return Self {
-                            redis_conn: Some(conn),
-                            mysql_pool,
-                            memory_store,
-                            use_memory: false,
-                        };
+                        redis_state.conn = Some(conn);
+                        redis_state.use_memory = false;
                     }
                     Err(e) => {
                         error!("[MessageStore] Failed to connect to Redis {}: {}", url, e);
@@ -74,32 +92,151 @@ impl MessageStore {
         } else {
             warn!("[MessageStore] No Redis URL provided. Using in-memory message store.");
         }
-        
+
         Self {
-            redis_conn: None,
+            redis_state: Arc::new(Mutex::new(redis_state)),
+            redis_url: redis_url_owned,
+            reconnect_max_attempts,
+            reconnect_interval_secs,
             mysql_pool,
             memory_store,
-            use_memory: true,
         }
     }
 
-    /// Store a message by ID
-    pub async fn store_message(&mut self, message_id: &str, message: &str) {
-        if !self.use_memory {
-            if let Some(conn) = &mut self.redis_conn {
-                let result: Result<(), RedisError> = conn.set(message_id, message).await;
-                match result {
-                    Ok(_) => {
-                        debug!("[MessageStore] Message stored in Redis: {}", message_id);
-                        return;
-                    }
+    async fn schedule_reconnect(&self) {
+        let redis_url = match &self.redis_url {
+            Some(url) => url.clone(),
+            None => {
+                warn!("[MessageStore] No Redis URL available for reconnection attempts.");
+                return;
+            }
+        };
+
+        {
+            let mut state = self.redis_state.lock().await;
+            if state.reconnect_in_progress {
+                debug!("[MessageStore] Redis reconnection already in progress, skipping new attempt.");
+                return;
+            }
+            state.reconnect_in_progress = true;
+        }
+
+        let state = self.redis_state.clone();
+        let max_attempts = self.reconnect_max_attempts;
+        let interval_secs = self.reconnect_interval_secs;
+        let memory_store = self.memory_store.clone();
+
+        tokio::spawn(async move {
+            for attempt in 1..=max_attempts {
+                match redis::Client::open(redis_url.as_str()) {
+                    Ok(client) => match client.get_tokio_connection().await {
+                        Ok(mut conn) => {
+                            info!("[MessageStore] Redis reconnection succeeded on attempt {}", attempt);
+                            
+                            // Migrate in-memory data to Redis
+                            let memory_data = {
+                                let store = memory_store.lock().await;
+                                store.clone()
+                            };
+                            
+                            let mut migrated_count = 0;
+                            let mut failed_count = 0;
+                            for (key, value) in memory_data.iter() {
+                                match conn.set::<_, _, ()>(key, value).await {
+                                    Ok(_) => {
+                                        migrated_count += 1;
+                                        debug!("[MessageStore] Migrated message {} from memory to Redis", key);
+                                    }
+                                    Err(e) => {
+                                        failed_count += 1;
+                                        error!("[MessageStore] Failed to migrate message {} to Redis: {}", key, e);
+                                    }
+                                }
+                            }
+                            
+                            if migrated_count > 0 {
+                                info!("[MessageStore] Successfully migrated {} messages from memory to Redis", migrated_count);
+                            }
+                            if failed_count > 0 {
+                                warn!("[MessageStore] Failed to migrate {} messages to Redis", failed_count);
+                            }
+                            
+                            // Clear memory cache after successful migration
+                            {
+                                let mut store = memory_store.lock().await;
+                                store.clear();
+                                info!("[MessageStore] Cleared in-memory cache after Redis reconnection");
+                            }
+                            
+                            // Update state
+                            let mut guard = state.lock().await;
+                            guard.conn = Some(conn);
+                            guard.use_memory = false;
+                            guard.reconnect_in_progress = false;
+                            return;
+                        }
+                        Err(e) => {
+                            error!(
+                                "[MessageStore] Redis reconnection attempt {} failed: {}",
+                                attempt, e
+                            );
+                        }
+                    },
                     Err(e) => {
-                        error!("[MessageStore] Failed to store message in Redis: {}", e);
-                        self.use_memory = true;
-                        warn!("[MessageStore] Switching to in-memory message store due to Redis error.");
+                        error!("[MessageStore] Invalid Redis URL during reconnection: {}", e);
+                        break;
                     }
                 }
+
+                if attempt < max_attempts {
+                    sleep(Duration::from_secs(interval_secs)).await;
+                }
             }
+
+            let mut guard = state.lock().await;
+            guard.reconnect_in_progress = false;
+            warn!(
+                "[MessageStore] Exhausted Redis reconnection attempts ({} tries). Continuing with in-memory storage.",
+                max_attempts
+            );
+        });
+    }
+
+    /// Store a message by ID
+    pub async fn store_message(&self, message_id: &str, message: &str) {
+        let mut need_reconnect = false;
+
+        {
+            let mut state = self.redis_state.lock().await;
+            if !state.use_memory {
+                if let Some(conn) = state.conn.as_mut() {
+                    let result: Result<(), RedisError> = conn.set(message_id, message).await;
+                    match result {
+                        Ok(_) => {
+                            debug!("[MessageStore] Message stored in Redis: {}", message_id);
+                            return;
+                        }
+                        Err(e) => {
+                            error!("[MessageStore] Failed to store message in Redis: {}", e);
+                            state.use_memory = true;
+                            state.conn = None;
+                            need_reconnect = true;
+                            warn!("[MessageStore] Switching to in-memory message store due to Redis error.");
+                        }
+                    }
+                } else {
+                    state.use_memory = true;
+                    need_reconnect = true;
+                    warn!("[MessageStore] Redis connection missing, switching to in-memory store.");
+                }
+            } else if self.redis_url.is_some() && !state.reconnect_in_progress {
+                // Redis is configured but currently unavailable; trigger a reconnection attempt in the background.
+                need_reconnect = true;
+            }
+        }
+
+        if need_reconnect {
+            self.schedule_reconnect().await;
         }
         // Fallback to memory
         let mut store = self.memory_store.lock().await;
@@ -188,19 +325,36 @@ impl MessageStore {
     }
 
     /// Get a message by ID
-    pub async fn get_message(&mut self, message_id: &str) -> Option<String> {
-        if !self.use_memory {
-            if let Some(conn) = &mut self.redis_conn {
-                let result: Result<Option<String>, RedisError> = conn.get(message_id).await;
-                match result {
-                    Ok(val) => return val,
-                    Err(e) => {
-                        error!("[MessageStore] Failed to get message from Redis: {}", e);
-                        self.use_memory = true;
-                        warn!("[MessageStore] Switching to in-memory message store due to Redis error.");
+    pub async fn get_message(&self, message_id: &str) -> Option<String> {
+        let mut need_reconnect = false;
+
+        {
+            let mut state = self.redis_state.lock().await;
+            if !state.use_memory {
+                if let Some(conn) = state.conn.as_mut() {
+                    let result: Result<Option<String>, RedisError> = conn.get(message_id).await;
+                    match result {
+                        Ok(val) => return val,
+                        Err(e) => {
+                            error!("[MessageStore] Failed to get message from Redis: {}", e);
+                            state.use_memory = true;
+                            state.conn = None;
+                            need_reconnect = true;
+                            warn!("[MessageStore] Switching to in-memory message store due to Redis error.");
+                        }
                     }
+                } else {
+                    state.use_memory = true;
+                    need_reconnect = true;
+                    warn!("[MessageStore] Redis connection missing, switching to in-memory store.");
                 }
+            } else if self.redis_url.is_some() && !state.reconnect_in_progress {
+                need_reconnect = true;
             }
+        }
+
+        if need_reconnect {
+            self.schedule_reconnect().await;
         }
         // Fallback to memory
         let store = self.memory_store.lock().await;
@@ -208,24 +362,40 @@ impl MessageStore {
     }
 
     /// Get a message by ID from Redis, fallback to MySQL, then memory
-    pub async fn get_message_with_mysql(&mut self, message_id: &str) -> Option<String> {
+    pub async fn get_message_with_mysql(&self, message_id: &str) -> Option<String> {
+        let mut need_reconnect = false;
         // Try Redis first
-        if !self.use_memory {
-            if let Some(conn) = &mut self.redis_conn {
-                let result: Result<Option<String>, RedisError> = conn.get(message_id).await;
-                match result {
-                    Ok(val) => {
-                        if val.is_some() {
-                            return val;
+        {
+            let mut state = self.redis_state.lock().await;
+            if !state.use_memory {
+                if let Some(conn) = state.conn.as_mut() {
+                    let result: Result<Option<String>, RedisError> = conn.get(message_id).await;
+                    match result {
+                        Ok(val) => {
+                            if val.is_some() {
+                                return val;
+                            }
+                        }
+                        Err(e) => {
+                            error!("[MessageStore] Failed to get message from Redis: {}", e);
+                            state.use_memory = true;
+                            state.conn = None;
+                            need_reconnect = true;
+                            warn!("[MessageStore] Switching to in-memory message store due to Redis error.");
                         }
                     }
-                    Err(e) => {
-                        error!("[MessageStore] Failed to get message from Redis: {}", e);
-                        self.use_memory = true;
-                        warn!("[MessageStore] Switching to in-memory message store due to Redis error.");
-                    }
+                } else {
+                    state.use_memory = true;
+                    need_reconnect = true;
+                    warn!("[MessageStore] Redis connection missing, switching to in-memory store.");
                 }
+            } else if self.redis_url.is_some() && !state.reconnect_in_progress {
+                need_reconnect = true;
             }
+        }
+
+        if need_reconnect {
+            self.schedule_reconnect().await;
         }
 
         // Try MySQL as fallback
@@ -255,7 +425,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_memory_store() {
-        let mut store = MessageStore::new(None, None).await;
+        let store = MessageStore::new(None, None, None, None).await;
         store.store_message("id1", "hello").await;
         let val = store.get_message("id1").await;
         assert_eq!(val, Some("hello".to_string()));
@@ -263,7 +433,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_memory_store_overwrite() {
-        let mut store = MessageStore::new(None, None).await;
+        let store = MessageStore::new(None, None, None, None).await;
         store.store_message("id2", "foo").await;
         store.store_message("id2", "bar").await;
         let val = store.get_message("id2").await;
@@ -278,7 +448,7 @@ mod tests {
             // Skip if no Redis URL
             return;
         }
-        let mut store = MessageStore::new(redis_url.as_deref(), None).await;
+        let store = MessageStore::new(redis_url.as_deref(), None, Some(3), Some(1)).await;
         store.store_message("id3", "redis_test").await;
         let val = store.get_message("id3").await;
         assert_eq!(val, Some("redis_test".to_string()));
@@ -292,12 +462,12 @@ mod tests {
             // Skip if no MySQL URL
             return;
         }
-        let store = MessageStore::new(None, mysql_url.as_deref()).await;
+        let store = MessageStore::new(None, mysql_url.as_deref(), None, None).await;
         let record = MessageRecord {
             message_id: "test_msg_001".to_string(),
             sender_id: "user_123".to_string(),
             sender_name: "Test User".to_string(),
-            send_time: chrono::Local::now().naive_local(),
+            send_time: Local::now().naive_local(),
             group_id: Some("group_456".to_string()),
             group_name: Some("Test Group".to_string()),
             content: "Hello, this is a test message".to_string(),

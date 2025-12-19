@@ -58,7 +58,15 @@ async fn main() {
     }
 
     // Create and start the bot adapter
-    let adapter = BotAdapter::new(config.bot_server_url, config.bot_server_token, redis_url, database_url, args.qq_id).await;
+    let adapter = BotAdapter::new(
+        config.bot_server_url,
+        config.bot_server_token,
+        redis_url,
+        database_url,
+        config.redis_reconnect_max_attempts,
+        config.redis_reconnect_interval_secs,
+        args.qq_id,
+    ).await;
     info!("Bot adapter initialized, connecting to server...");
     if let Err(e) = adapter.start().await {
         error!("Bot adapter error: {}", e);

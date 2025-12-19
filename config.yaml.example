@@ -4,6 +4,8 @@ REDIS_HOST: redis
 REDIS_PORT: 6379
 REDIS_DB: 0
 # REDIS_PASSWORD: yourpassword  # Uncomment and set if needed
+REDIS_RECONNECT_MAX_ATTEMPTS: 3
+REDIS_RECONNECT_INTERVAL_SECS: 60
 
 # MySQL Database Configuration Example
 MYSQL_HOST: 127.0.0.1

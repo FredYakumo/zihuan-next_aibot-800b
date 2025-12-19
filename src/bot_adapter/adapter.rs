@@ -21,7 +21,15 @@ pub struct BotAdapter {
 
 impl BotAdapter {
 
-    pub async fn new(url: impl Into<String>, token: impl Into<String>, redis_url: Option<String>, database_url: Option<String>, qq_id: String) -> Self {
+    pub async fn new(
+        url: impl Into<String>,
+        token: impl Into<String>,
+        redis_url: Option<String>,
+        database_url: Option<String>,
+        redis_reconnect_max_attempts: Option<u32>,
+        redis_reconnect_interval_secs: Option<u64>,
+        qq_id: String,
+    ) -> Self {
         // Use provided redis_url, fallback to env var
         let redis_url = redis_url.or_else(|| env::var("REDIS_URL").ok());
         
@@ -32,7 +40,12 @@ impl BotAdapter {
             env::var("DATABASE_URL").ok()
         };
         
-        let message_store = Arc::new(TokioMutex::new(MessageStore::new(redis_url.as_deref(), database_url.as_deref()).await));
+        let message_store = Arc::new(TokioMutex::new(MessageStore::new(
+            redis_url.as_deref(),
+            database_url.as_deref(),
+            redis_reconnect_max_attempts,
+            redis_reconnect_interval_secs,
+        ).await));
 
         Self {
             url: url.into(),
@@ -141,7 +154,7 @@ impl BotAdapter {
         let msg_id = raw_event.message_id.to_string();
         let msg_str = serde_json::to_string(&raw_event).unwrap_or_default();
         tokio::spawn(async move {
-            let mut store = store.lock().await;
+            let store = store.lock().await;
             store.store_message(&msg_id, &msg_str).await;
         });
 
