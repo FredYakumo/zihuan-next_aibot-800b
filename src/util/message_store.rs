@@ -7,7 +7,9 @@ use redis::{AsyncCommands, RedisError};
 use log::{info, warn, error, debug};
 use sqlx::mysql::MySqlPool;
 use sqlx::Row;
-use chrono::{Local, NaiveDateTime};
+use chrono::NaiveDateTime;
+use crate::util::mask_url_credentials;
+
 
 struct RedisState {
     conn: Option<Connection>,
@@ -77,14 +79,16 @@ impl MessageStore {
         };
         
         if let Some(url) = mysql_url {
+            let safe_url = mask_url_credentials(url);
+
             match MySqlPool::connect(url).await {
                 Ok(pool) => {
-                    info!("[MessageStore] Connected to MySQL at {}", url);
+                    info!("[MessageStore] Connected to MySQL at {}", safe_url);
                     mysql_state.pool = Some(pool);
                     mysql_state.use_memory = false;
                 }
                 Err(e) => {
-                    error!("[MessageStore] Failed to connect to MySQL {}: {}", url, e);
+                    error!("[MessageStore] Failed to connect to MySQL {}: {}", safe_url, e);
                     warn!("[MessageStore] Falling back to in-memory message record store due to MySQL connection error.");
                 }
             }
@@ -93,15 +97,16 @@ impl MessageStore {
         }
 
         if let Some(url) = redis_url {
+            let safe_url = mask_url_credentials(url);
             match redis::Client::open(url) {
                 Ok(client) => match client.get_tokio_connection().await {
                     Ok(conn) => {
-                        info!("[MessageStore] Connected to Redis at {}", url);
+                        info!("[MessageStore] Connected to Redis at {}", safe_url);
                         redis_state.conn = Some(conn);
                         redis_state.use_memory = false;
                     }
                     Err(e) => {
-                        error!("[MessageStore] Failed to connect to Redis {}: {}", url, e);
+                        error!("[MessageStore] Failed to connect to Redis {}: {}", safe_url, e);
                         warn!("[MessageStore] Falling back to in-memory message store due to Redis connection error.");
                     }
                 },
@@ -591,6 +596,7 @@ impl MessageStore {
 mod tests {
     use super::{MessageStore, MessageRecord};
     use tokio;
+    use chrono::Local;
 
     #[tokio::test]
     async fn test_memory_store() {
