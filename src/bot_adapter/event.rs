@@ -15,7 +15,8 @@ pub async fn process_friend_message(bot_adapter: SharedBotAdapter, event: Messag
         .collect();
     
     info!(
-        "[Friend Message] [Sender: {}] Message: {:?}",
+        "[Friend Message] [Sender: {}({})] Message: {:?}",
+        event.sender.nickname,
         event.sender.user_id,
         messages
     );
@@ -53,8 +54,10 @@ pub async fn process_group_message(_bot_adapter: SharedBotAdapter, event: Messag
         .collect();
     
     info!(
-        "[Group Message] [Group: {}] [Sender: {}] Message: {:?}",
+        "[Group Message] [Group: {}({})] [Sender: {}({})] Message: {:?}",
         event.group_name.as_deref().unwrap_or_default(),
+        event.group_id.unwrap_or_default(),
+        event.sender.nickname,
         event.sender.user_id,
         messages
     );
