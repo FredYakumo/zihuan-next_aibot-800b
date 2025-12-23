@@ -4,7 +4,7 @@ pub mod brain;
 ///
 /// An agent consumes an event and produces an output/decision.
 ///
-use crate::{bot_adapter::models::MessageEvent, llm::Message};
+use crate::{bot_adapter::{adapter::BotAdapter, models::MessageEvent}, llm::Message};
 
 pub trait Agent: Send + Sync {
 	type Output;
@@ -13,7 +13,7 @@ pub trait Agent: Send + Sync {
 		"agent"
 	}
 
-	fn on_event(&self, event: &MessageEvent) -> Self::Output;
+	fn on_event(&self, bot_adapter: &mut BotAdapter, event: &MessageEvent) -> Self::Output;
 
 	/// Invoke this agent using structured input (for agent-to-agent calls).
 	/// Default implementation falls back to panic to surface unimplemented usage.

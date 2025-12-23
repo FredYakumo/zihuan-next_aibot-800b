@@ -39,6 +39,36 @@ pub struct Message {
     pub tool_calls: Vec<ToolCalls>,
 }
 
+impl Message {
+    /// Create a system message with the given content and no tool calls.
+    pub fn system<S: Into<String>>(content: S) -> Self {
+        Self {
+            role: MessageRole::System,
+            content: Some(content.into()),
+            tool_calls: Vec::new(),
+        }
+    }
+
+    /// Create a user message with the given content and no tool calls.
+    pub fn user<S: Into<String>>(content: S) -> Self {
+        Self {
+            role: MessageRole::User,
+            content: Some(content.into()),
+            tool_calls: Vec::new(),
+        }
+    }
+}
+
+/// Shortcut to construct a system message.
+pub fn SystemMessage<S: Into<String>>(content: S) -> Message {
+    Message::system(content)
+}
+
+/// Shortcut to construct a user message.
+pub fn UserMessage<S: Into<String>>(content: S) -> Message {
+    Message::user(content)
+}
+
 pub struct InferenceParam {
     pub messages: Vec<Message>,
     pub tools: Option<Vec<Arc<dyn FunctionTool>>>,

@@ -66,7 +66,7 @@ pub async fn process_group_message(_bot_adapter: SharedBotAdapter, event: Messag
     let at_target_list: Vec<String> = event.message_list.iter()
         .filter_map(|m| {
             if let crate::bot_adapter::models::message::Message::At(at_msg) = m {
-                at_msg.target.map(|id| id.to_string())
+                at_msg.target.as_ref().map(|id| id.to_string())
             } else {
                 None
             }

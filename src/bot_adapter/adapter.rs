@@ -80,6 +80,10 @@ impl BotAdapter {
             .as_str()
     }
 
+    pub fn get_bot_profile(&self) -> Option<&Profile> {
+        self.bot_profile.as_ref()
+    }
+
     /// Start the WebSocket connection and begin processing events using a shared handle
     pub async fn start(
         adapter: SharedBotAdapter,
@@ -181,6 +185,7 @@ impl BotAdapter {
             message_list: raw_event.message.clone(),
             group_id: raw_event.group_id,
             group_name: raw_event.group_name.clone(),
+            is_group_message: matches!(raw_event.message_type, MessageType::Group),
         };
 
         // Store the message in the message store (async spawn)

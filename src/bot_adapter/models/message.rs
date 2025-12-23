@@ -40,6 +40,23 @@ where
     }
 }
 
+fn deserialize_option_string_from_string_or_number<'de, D>(
+    deserializer: D,
+) -> Result<Option<String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let opt = Option::<serde_json::Value>::deserialize(deserializer)?;
+    match opt {
+        None | Some(serde_json::Value::Null) => Ok(None),
+        Some(serde_json::Value::String(s)) => Ok(Some(s)),
+        Some(serde_json::Value::Number(n)) => Ok(Some(n.to_string())),
+        Some(other) => Err(de::Error::custom(format!(
+            "expected null/string/number for Option<String>, got {other}"
+        ))),
+    }
+}
+
 /// Base trait for all message types
 pub trait MessageBase: fmt::Display + fmt::Debug + Send + Sync {
     fn get_type(&self) -> &'static str;
@@ -99,13 +116,13 @@ impl MessageBase for PlainTextMessage {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AtTargetMessage {
     #[serde(alias = "qq")]
-    #[serde(default, deserialize_with = "deserialize_option_i64_from_string_or_number")]
-    pub target: Option<i64>,
+    #[serde(default, deserialize_with = "deserialize_option_string_from_string_or_number")]
+    pub target: Option<String>,
 }
 
 impl AtTargetMessage {
-    pub fn target_id(&self) -> i64 {
-        self.target.unwrap_or(0)
+    pub fn target_id(&self) -> String {
+        self.target.clone().unwrap_or_else(|| "null".to_string())
     }
 }
 
@@ -155,7 +172,7 @@ pub struct MessageProp {
     pub content: Option<String>,
     pub ref_content: Option<String>,
     pub is_at_me: bool,
-    pub at_target_list: Vec<i64>
+    pub at_target_list: Vec<String>
 }
 
 impl MessageProp {
@@ -165,13 +182,13 @@ impl MessageProp {
     /// - ref_content: concatenation of referenced/replied source messages (if any), joined by newline
     /// - at_target_list: all unique @ target ids in appearance order
     /// - is_at_me: true if `bot_id` is provided and present in the @ list
-    pub fn from_messages(messages: &[Message], bot_id: Option<i64>) -> Self {
+    pub fn from_messages(messages: &[Message], bot_id: Option<&str>) -> Self {
         use std::collections::HashSet;
 
         let mut content_parts: Vec<String> = Vec::with_capacity(messages.len());
         let mut ref_parts: Vec<String> = Vec::new();
-        let mut at_targets: Vec<i64> = Vec::new();
-        let mut seen: HashSet<i64> = HashSet::new();
+        let mut at_targets: Vec<String> = Vec::new();
+        let mut seen: HashSet<String> = HashSet::new();
 
         for m in messages {
             // Accumulate content pieces using Display implementation
@@ -179,9 +196,9 @@ impl MessageProp {
 
             // Collect @ targets (dedup preserving first appearance order)
             if let Message::At(at) = m {
-                if let Some(id) = at.target {
-                    if seen.insert(id) {
-                        at_targets.push(id);
+                if let Some(id) = &at.target {
+                    if seen.insert(id.clone()) {
+                        at_targets.push(id.clone());
                     }
                 }
             }
@@ -205,7 +222,7 @@ impl MessageProp {
         };
 
         let is_at_me = match bot_id {
-            Some(id) => at_targets.iter().any(|t| *t == id),
+            Some(id) => at_targets.iter().any(|t| t.to_string() == *id),
             None => false,
         };
 
@@ -227,14 +244,14 @@ mod tests {
     fn test_message_prop_from_messages_basic() {
         let msgs = vec![
             Message::PlainText(PlainTextMessage { text: "Hello".into() }),
-            Message::At(AtTargetMessage { target: Some(42) }),
+            Message::At(AtTargetMessage { target: Some("42".into()) }),
         ];
 
-        let prop = MessageProp::from_messages(&msgs, Some(42));
+        let prop = MessageProp::from_messages(&msgs, Some("42"));
         assert_eq!(prop.content.as_deref(), Some("Hello @42"));
         assert_eq!(prop.ref_content.as_deref(), None);
         assert!(prop.is_at_me);
-        assert_eq!(prop.at_target_list, vec![42]);
+        assert_eq!(prop.at_target_list, vec!["42".to_string()]);
     }
 
     #[test]
@@ -255,12 +272,12 @@ mod tests {
     #[test]
     fn test_message_prop_dedup_at_targets() {
         let msgs = vec![
-            Message::At(AtTargetMessage { target: Some(1) }),
-            Message::At(AtTargetMessage { target: Some(2) }),
-            Message::At(AtTargetMessage { target: Some(1) }),
+            Message::At(AtTargetMessage { target: Some("1".into()) }),
+            Message::At(AtTargetMessage { target: Some("2".into()) }),
+            Message::At(AtTargetMessage { target: Some("1".into()) }),
         ];
-        let prop = MessageProp::from_messages(&msgs, Some(99));
-        assert_eq!(prop.at_target_list, vec![1, 2]);
+        let prop = MessageProp::from_messages(&msgs, Some("99"));
+        assert_eq!(prop.at_target_list, vec!["1".to_string(), "2".to_string()]);
         assert!(!prop.is_at_me);
     }
 }
