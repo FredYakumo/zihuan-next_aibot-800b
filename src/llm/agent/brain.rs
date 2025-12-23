@@ -18,34 +18,42 @@ impl BrainAgent {
     }
 }
 
+/// Build system message based on bot profile and event context
+fn build_system_message(bot_adapter: &BotAdapter, event: &MessageEvent) -> Message {
+    let bot_profile = bot_adapter.get_bot_profile();
+    
+    if let Some(profile) = bot_profile {
+        if event.is_group_message {
+            SystemMessage(format!(
+                "你是\"{}\"，QQ号是\"{}\"。群\"{}\"里的一个叫\"{}\"(QQ号: \"{}\")的人给你发送了一条消息。你需要根据消息内容决定做出反应或者无反应，其中你做出的反应需要委派给相应的Agent智能体(通过function tools)来完成",
+                profile.nickname,
+                profile.qq_id,
+                event.group_name.clone().unwrap_or_default(),
+                if !event.sender.card.is_empty() { event.sender.card.clone() } else { event.sender.nickname.clone() },
+                event.sender.user_id
+            ))
+        } else {
+            SystemMessage(format!(
+                "你是\"{}\"，QQ号是\"{}\"。你需要根据消息内容决定做出反应或者无反应，其中你做出的反应需要委派给相应的Agent智能体(通过function tools)来完成",
+                profile.nickname, profile.qq_id
+            ))
+        }
+    } else {
+        SystemMessage(format!(
+            "你是\"紫幻\", QQ号是\"{}\"。你需要根据消息内容决定做出反应或者无反应，其中你做出的反应需要委派给相应的Agent智能体(通过function tools)来完成", 
+            bot_adapter.get_bot_id()
+        ))
+    }
+}
+
 impl Agent for BrainAgent {
     type Output = Result<()>;
 
     fn on_event(&self, bot_adapter: &mut BotAdapter, event: &MessageEvent) -> Self::Output {
         let msg_prop = MessageProp::from_messages(&event.message_list, Some(bot_adapter.get_bot_id()));
 
-        let bot_profile = bot_adapter.get_bot_profile();
-
         // Build system prompt with conversation context
-        let system_msg = if let Some(profile) = bot_profile {
-            if event.is_group_message {
-                SystemMessage(format!(
-                    "你是\"{}\"，QQ号是\"{}\"。群\"{}\"里的一个叫\"{}\"(QQ号: \"{}\")的人给你发送了一条消息。\n你需要根据消息内容决定做出反应或者无反应，其中你做出的反应需要委派给相应的Agent智能体(通过function tools)来完成",
-                    profile.nickname,
-                    profile.qq_id,
-                    event.group_name.clone().unwrap_or_default(),
-                    if !event.sender.card.is_empty() { event.sender.card.clone() } else { event.sender.nickname.clone() },
-                    event.sender.user_id
-                ))
-            } else {
-                SystemMessage(format!(
-                    "你是\"{}\"，QQ号是\"{}\"。请根据用户的消息进行回复。",
-                    profile.nickname, profile.qq_id
-                ))
-            }
-        } else {
-            SystemMessage(format!("你是紫幻。请根据用户的消息进行回复。", bot_adapter.get_bot_id()))
-        };
+        let system_msg = build_system_message(bot_adapter, event);
 
         // Build user message from incoming MessageEvent
         let mut user_text = msg_prop.content.unwrap_or_default();
