@@ -11,9 +11,7 @@ use crate::{bot_adapter::{adapter::BotAdapter, models::MessageEvent}, llm::Messa
 pub trait Agent: Send + Sync {
 	type Output;
 
-	fn name(&self) -> &'static str {
-		"agent"
-	}
+	fn name(&self) -> &'static str;
 
 	fn on_event(&self, bot_adapter: &mut BotAdapter, event: &MessageEvent) -> Self::Output;
 

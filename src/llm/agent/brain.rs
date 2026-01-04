@@ -168,4 +168,8 @@ impl Agent for BrainAgent {
     fn on_agent_input(&self, _input: Message) -> Self::Output {
         Ok(())
     }
+    
+    fn name(&self) -> &'static str {
+        "BrainAgent"
+    }
 }
