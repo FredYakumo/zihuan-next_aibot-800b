@@ -59,7 +59,7 @@ impl FunctionTool for CodeWriterTool {
             Message { role: MessageRole::System, content: Some(system.to_string()), tool_calls: Vec::new() },
             Message { role: MessageRole::User, content: Some(user_prompt), tool_calls: Vec::new() },
         ];
-        let param = InferenceParam { messages, tools: None };
+        let param = InferenceParam { messages: &messages, tools: None };
         let resp = self.llm.inference(&param);
         let content = resp.content.unwrap_or_default();
         Ok(json!({ "code": content }))

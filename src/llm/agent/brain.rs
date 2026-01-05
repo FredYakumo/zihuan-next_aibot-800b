@@ -8,7 +8,7 @@ use crate::bot_adapter::models::message::MessageProp;
 use crate::llm::agent::Agent;
 use crate::llm::{InferenceParam, LLMBase, Message, SystemMessage, UserMessage};
 use crate::error::Result;
-use crate::llm::function_tools::{MathTool, ChatHistoryTool, NaturalLanguageReplyTool, CodeWriterTool, FunctionTool};
+use crate::llm::function_tools::FunctionTool;
 
 pub struct BrainAgent {
     llm: Arc<dyn LLMBase + Send + Sync>,
@@ -165,7 +165,7 @@ impl Agent for BrainAgent {
         Ok(())
     }
 
-    fn on_agent_input(&self, _input: Message) -> Self::Output {
+    fn on_agent_input(&self, _messages: Vec<Message>) -> Self::Output {
         Ok(())
     }
     

@@ -195,11 +195,10 @@ impl Agent for ChatAgent {
         Ok(final_response)
     }
 
-    fn on_agent_input(&self, input: Message) -> Self::Output {
-        info!("[ChatAgent] processing agent input");
+    fn on_agent_input(&self, messages: Vec<Message>) -> Self::Output {
+        info!("[ChatAgent] processing agent input with {} message(s)", messages.len());
         
-        let prompt = input.content.unwrap_or_default();
-        if prompt.trim().is_empty() {
+        if messages.is_empty() {
             return Ok("(无输入内容)".to_string());
         }
 
@@ -207,7 +206,8 @@ impl Agent for ChatAgent {
             "你是一个聊天助手。请根据用户输入生成合适的回复。保持友好、自然的对话风格。".to_string()
         );
         
-        let mut chat_message_list = vec![system_msg, UserMessage(prompt)];
+        let mut chat_message_list = vec![system_msg];
+        chat_message_list.extend(messages);
         
         let max_iterations = 5;
         let mut iteration = 0;
