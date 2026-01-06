@@ -8,6 +8,8 @@ use crate::llm::agent::{Agent, FunctionToolsAgent};
 use crate::llm::{InferenceParam, LLMBase, Message, SystemMessage, UserMessage};
 use crate::error::Result;
 use crate::llm::function_tools::{ChatHistoryTool, NaturalLanguageReplyTool, FunctionTool};
+use crate::util::message_store::MessageStore;
+use tokio::sync::Mutex as TokioMutex;
 
 /// ChatAgent: specialized agent for conversational interactions
 /// 
@@ -20,9 +22,9 @@ pub struct ChatAgent {
 }
 
 impl ChatAgent {
-    pub fn new(llm: Arc<dyn LLMBase + Send + Sync>) -> Self {
+    pub fn new(llm: Arc<dyn LLMBase + Send + Sync>, message_store: Arc<TokioMutex<MessageStore>>) -> Self {
         let tools: Vec<Arc<dyn FunctionTool>> = vec![
-            Arc::new(ChatHistoryTool::new()),
+            Arc::new(ChatHistoryTool::new(message_store)),
             Arc::new(NaturalLanguageReplyTool::new(llm.clone())),
         ];
         

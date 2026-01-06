@@ -101,8 +101,15 @@ impl MessageStore {
             let safe_url = mask_url_credentials(url);
             match redis::Client::open(url) {
                 Ok(client) => match client.get_tokio_connection().await {
-                    Ok(conn) => {
+                    Ok(mut conn) => {
                         info!("[MessageStore] Connected to Redis at {}", safe_url);
+                        
+                        // Clear all existing messages in Redis on startup
+                        match redis::cmd("FLUSHDB").query_async::<_, ()>(&mut conn).await {
+                            Ok(_) => info!("[MessageStore] Cleared all existing messages from Redis on startup"),
+                            Err(e) => warn!("[MessageStore] Failed to clear Redis on startup: {}", e),
+                        }
+                        
                         redis_state.conn = Some(conn);
                         redis_state.use_memory = false;
                     }
@@ -132,6 +139,157 @@ impl MessageStore {
             memory_store,
             mysql_memory_store,
         }
+    }
+
+    /// Load recent messages from MySQL into Redis or memory cache on startup
+    /// This populates the cache with historical messages for faster access
+    pub async fn load_messages_from_mysql(&self, limit: u32) -> Result<u32> {
+        let state = self.mysql_state.lock().await;
+        
+        if state.pool.is_none() {
+            warn!("[MessageStore] No MySQL pool available, skipping message loading");
+            return Ok(0);
+        }
+        
+        let pool = state.pool.as_ref().unwrap();
+        
+        // Query recent messages ordered by send_time DESC
+        let records = sqlx::query(
+            r#"
+            SELECT message_id, sender_id, sender_name, send_time, group_id, group_name, content, at_target_list
+            FROM message_record
+            ORDER BY send_time DESC
+            LIMIT ?
+            "#
+        )
+        .bind(limit)
+        .fetch_all(pool)
+        .await
+        .map_err(|e| crate::string_error!("Failed to query messages from MySQL: {}", e))?;
+        
+        info!("[MessageStore] Loaded {} message records from MySQL", records.len());
+        
+        let mut loaded_count = 0;
+        let mut redis_state = self.redis_state.lock().await;
+        
+        for row in records {
+            let message_id: String = row.get("message_id");
+            let content: String = row.get("content");
+            
+            // Try to store in Redis first, fallback to memory
+            if !redis_state.use_memory {
+                if let Some(conn) = redis_state.conn.as_mut() {
+                    match conn.set::<_, _, ()>(&message_id, &content).await {
+                        Ok(_) => {
+                            loaded_count += 1;
+                            debug!("[MessageStore] Loaded message {} into Redis from MySQL", message_id);
+                        }
+                        Err(e) => {
+                            error!("[MessageStore] Failed to load message {} into Redis: {}", message_id, e);
+                            // Switch to memory and store there
+                            redis_state.use_memory = true;
+                            let mut mem = self.memory_store.lock().await;
+                            mem.insert(message_id.clone(), content.clone());
+                            loaded_count += 1;
+                        }
+                    }
+                }
+            } else {
+                // Store directly to memory
+                let mut mem = self.memory_store.lock().await;
+                mem.insert(message_id.clone(), content.clone());
+                loaded_count += 1;
+                debug!("[MessageStore] Loaded message {} into memory from MySQL", message_id);
+            }
+        }
+        
+        info!("[MessageStore] Successfully loaded {} messages from MySQL into cache", loaded_count);
+        Ok(loaded_count)
+    }
+
+    /// Get messages by sender_id and optionally group_id from MySQL
+    /// Returns messages ordered by send_time DESC (most recent first)
+    pub async fn get_messages_by_sender(
+        &self,
+        sender_id: &str,
+        group_id: Option<&str>,
+        limit: u32,
+    ) -> Result<Vec<MessageRecord>> {
+        let state = self.mysql_state.lock().await;
+        
+        if state.pool.is_none() {
+            warn!("[MessageStore] No MySQL pool available, checking memory buffer");
+            // Fallback to memory buffer
+            let mem = self.mysql_memory_store.lock().await;
+            let mut records: Vec<MessageRecord> = mem.values()
+                .filter(|r| {
+                    r.sender_id == sender_id && 
+                    (group_id.is_none() || r.group_id.as_deref() == group_id)
+                })
+                .cloned()
+                .collect();
+            
+            // Sort by send_time DESC
+            records.sort_by(|a, b| b.send_time.cmp(&a.send_time));
+            records.truncate(limit as usize);
+            
+            return Ok(records);
+        }
+        
+        let pool = state.pool.as_ref().unwrap();
+        
+        let records = if let Some(gid) = group_id {
+            // Query with both sender_id and group_id
+            sqlx::query(
+                r#"
+                SELECT message_id, sender_id, sender_name, send_time, group_id, group_name, content, at_target_list
+                FROM message_record
+                WHERE sender_id = ? AND group_id = ?
+                ORDER BY send_time DESC
+                LIMIT ?
+                "#
+            )
+            .bind(sender_id)
+            .bind(gid)
+            .bind(limit)
+            .fetch_all(pool)
+            .await
+            .map_err(|e| crate::string_error!("Failed to query messages by sender and group: {}", e))?
+        } else {
+            // Query by sender_id only
+            sqlx::query(
+                r#"
+                SELECT message_id, sender_id, sender_name, send_time, group_id, group_name, content, at_target_list
+                FROM message_record
+                WHERE sender_id = ?
+                ORDER BY send_time DESC
+                LIMIT ?
+                "#
+            )
+            .bind(sender_id)
+            .bind(limit)
+            .fetch_all(pool)
+            .await
+            .map_err(|e| crate::string_error!("Failed to query messages by sender: {}", e))?
+        };
+        
+        let mut result = Vec::new();
+        for row in records {
+            result.push(MessageRecord {
+                message_id: row.get("message_id"),
+                sender_id: row.get("sender_id"),
+                sender_name: row.get("sender_name"),
+                send_time: row.get("send_time"),
+                group_id: row.get("group_id"),
+                group_name: row.get("group_name"),
+                content: row.get("content"),
+                at_target_list: row.get("at_target_list"),
+            });
+        }
+        
+        debug!("[MessageStore] Retrieved {} messages for sender {} (group: {:?})", 
+               result.len(), sender_id, group_id);
+        Ok(result)
     }
 
     async fn schedule_reconnect(&self) {

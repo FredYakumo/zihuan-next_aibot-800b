@@ -55,6 +55,15 @@ impl BotAdapter {
             )
             .await,
         ));
+        
+        // Load recent messages from MySQL into Redis/memory cache on startup
+        {
+            let store = message_store.lock().await;
+            match store.load_messages_from_mysql(1000).await {
+                Ok(count) => info!("[BotAdapter] Loaded {} messages from MySQL into cache on startup", count),
+                Err(e) => warn!("[BotAdapter] Failed to load messages from MySQL: {}", e),
+            }
+        }
 
         Self {
             url: url.into(),
@@ -82,6 +91,10 @@ impl BotAdapter {
 
     pub fn get_bot_profile(&self) -> Option<&Profile> {
         self.bot_profile.as_ref()
+    }
+
+    pub fn get_message_store(&self) -> Arc<TokioMutex<MessageStore>> {
+        self.message_store.clone()
     }
 
     /// Start the WebSocket connection and begin processing events using a shared handle
