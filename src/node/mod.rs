@@ -150,8 +150,107 @@ impl NodeGraph {
     }
 
     pub fn execute(&mut self) -> Result<()> {
-        // TODO: Implement topological sorting and dependency management
-        // Here is a simplified version
+        let mut output_producers: HashMap<String, String> = HashMap::new();
+        for (node_id, node) in &self.nodes {
+            for port in node.output_ports() {
+                if let Some(existing) = output_producers.insert(port.name.clone(), node_id.clone()) {
+                    return Err(crate::error::Error::ValidationError(format!(
+                        "Output port '{}' is produced by both '{}' and '{}'",
+                        port.name, existing, node_id
+                    )));
+                }
+            }
+        }
+
+        let mut in_degree: HashMap<String, usize> = HashMap::new();
+        let mut dependents: HashMap<String, Vec<String>> = HashMap::new();
+
+        for node_id in self.nodes.keys() {
+            in_degree.insert(node_id.clone(), 0);
+        }
+
+        for (node_id, node) in &self.nodes {
+            for port in node.input_ports() {
+                if let Some(producer) = output_producers.get(&port.name) {
+                    if producer != node_id {
+                        dependents.entry(producer.clone()).or_default().push(node_id.clone());
+                        if let Some(count) = in_degree.get_mut(node_id) {
+                            *count += 1;
+                        }
+                    }
+                } else if port.required {
+                    return Err(crate::error::Error::ValidationError(format!(
+                        "Required input port '{}' for node '{}' is not bound",
+                        port.name, node_id
+                    )));
+                }
+            }
+        }
+
+        let mut ready: Vec<String> = in_degree
+            .iter()
+            .filter_map(|(id, degree)| if *degree == 0 { Some(id.clone()) } else { None })
+            .collect();
+        ready.sort();
+
+        let mut ordered: Vec<String> = Vec::with_capacity(self.nodes.len());
+        while !ready.is_empty() {
+            let node_id = ready.remove(0);
+            ordered.push(node_id.clone());
+
+            if let Some(next_nodes) = dependents.get(&node_id) {
+                for next_id in next_nodes {
+                    if let Some(count) = in_degree.get_mut(next_id) {
+                        *count = count.saturating_sub(1);
+                        if *count == 0 {
+                            ready.push(next_id.clone());
+                        }
+                    }
+                }
+                ready.sort();
+            }
+        }
+
+        if ordered.len() != self.nodes.len() {
+            return Err(crate::error::Error::ValidationError(
+                "Cycle detected in node dependencies".to_string(),
+            ));
+        }
+
+        let mut data_pool: HashMap<String, DataValue> = HashMap::new();
+
+        for node_id in ordered {
+            let node = self.nodes.get_mut(&node_id).ok_or_else(|| {
+                crate::error::Error::ValidationError(format!(
+                    "Node '{}' not found during execution",
+                    node_id
+                ))
+            })?;
+
+            let mut inputs: HashMap<String, DataValue> = HashMap::new();
+            for port in node.input_ports() {
+                if let Some(value) = data_pool.get(&port.name) {
+                    inputs.insert(port.name.clone(), value.clone());
+                } else if port.required {
+                    return Err(crate::error::Error::ValidationError(format!(
+                        "Required input port '{}' for node '{}' is missing",
+                        port.name, node_id
+                    )));
+                }
+            }
+
+            let outputs = node.execute(inputs)?;
+            for (key, value) in outputs {
+                if data_pool.contains_key(&key) {
+                    return Err(crate::error::Error::ValidationError(format!(
+                        "Output key '{}' from node '{}' conflicts with existing data",
+                        key, node_id
+                    )));
+                }
+                data_pool.insert(key, value);
+            }
+        }
+
         Ok(())
     }
 
