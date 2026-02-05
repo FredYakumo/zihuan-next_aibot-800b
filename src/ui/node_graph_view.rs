@@ -899,6 +899,67 @@ fn snap_to_grid_center(value: f32) -> f32 {
     snap_to_grid(value - GRID_SIZE / 2.0) + GRID_SIZE / 2.0
 }
 
+
+fn route_edge(
+    from_x: f32,
+    from_y: f32,
+    to_x: f32,
+    to_y: f32,
+    thickness: f32,
+    edge_index: i32,
+    snap: bool,
+    segments: &mut Vec<EdgeSegmentVm>,
+    corners: &mut Vec<EdgeCornerVm>,
+) -> (f32, f32) {
+    let min_dist = GRID_SIZE * 2.0;
+
+    if to_x < from_x + min_dist {
+        // Complex 5-segment route
+        let mid_y = (from_y + to_y) / 2.0;
+        let x_right = from_x + GRID_SIZE;
+        let x_left = to_x - GRID_SIZE;
+
+        let (mid_y, x_right, x_left) = if snap {
+            (
+                snap_to_grid_center(mid_y),
+                snap_to_grid_center(x_right),
+                snap_to_grid_center(x_left),
+            )
+        } else {
+            (mid_y, x_right, x_left)
+        };
+
+        push_segment(segments, from_x, from_y, x_right, from_y, thickness, edge_index);
+        push_segment(segments, x_right, from_y, x_right, mid_y, thickness, edge_index);
+        push_segment(segments, x_right, mid_y, x_left, mid_y, thickness, edge_index);
+        push_segment(segments, x_left, mid_y, x_left, to_y, thickness, edge_index);
+        push_segment(segments, x_left, to_y, to_x, to_y, thickness, edge_index);
+
+        corners.push(EdgeCornerVm { x: x_right, y: from_y, edge_index });
+        corners.push(EdgeCornerVm { x: x_right, y: mid_y, edge_index });
+        corners.push(EdgeCornerVm { x: x_left, y: mid_y, edge_index });
+        corners.push(EdgeCornerVm { x: x_left, y: to_y, edge_index });
+
+        ((x_right + x_left) / 2.0, mid_y)
+    } else {
+        // Simple 3-segment route
+        let mid_x = if snap {
+            snap_to_grid_center((from_x + to_x) / 2.0)
+        } else {
+            (from_x + to_x) / 2.0
+        };
+
+        push_segment(segments, from_x, from_y, mid_x, from_y, thickness, edge_index);
+        push_segment(segments, mid_x, from_y, mid_x, to_y, thickness, edge_index);
+        push_segment(segments, mid_x, to_y, to_x, to_y, thickness, edge_index);
+        
+        corners.push(EdgeCornerVm { x: mid_x, y: from_y, edge_index });
+        corners.push(EdgeCornerVm { x: mid_x, y: to_y, edge_index });
+
+        (mid_x, (from_y + to_y) / 2.0)
+    }
+}
+
 fn build_edge_segments(
     graph: &NodeGraphDefinition,
     snap: bool,
@@ -907,6 +968,7 @@ fn build_edge_segments(
     let mut corners = Vec::new();
     let mut labels = Vec::new();
     let thickness = GRID_SIZE * EDGE_THICKNESS_RATIO;
+    let mut edge_index: i32 = 0;
 
     for edge in &graph.edges {
         let from_node = match graph.nodes.iter().find(|n| n.id == edge.from_node_id) {
@@ -938,29 +1000,26 @@ fn build_edge_segments(
             (from_x, from_y, to_x, to_y)
         };
 
-        let mid_x = if snap {
-            snap_to_grid_center((from_x + to_x) / 2.0)
-        } else {
-            (from_x + to_x) / 2.0
-        };
-
-        push_segment(&mut segments, from_x, from_y, mid_x, from_y, thickness);
-        push_segment(&mut segments, mid_x, from_y, mid_x, to_y, thickness);
-        push_segment(&mut segments, mid_x, to_y, to_x, to_y, thickness);
-        corners.push(EdgeCornerVm { x: mid_x, y: from_y });
-        corners.push(EdgeCornerVm { x: mid_x, y: to_y });
+        let (label_x, label_y) = route_edge(
+            from_x, from_y, to_x, to_y,
+            thickness, edge_index, snap,
+            &mut segments, &mut corners
+        );
 
         let label_text = get_edge_data_type_label(from_node, &edge.from_port)
             .unwrap_or_else(|| "Unknown".to_string());
         let label_width = (label_text.len() as f32 * 7.0).max(GRID_SIZE * 2.0);
         let label_height = GRID_SIZE * 0.8;
+       
         labels.push(EdgeLabelVm {
             text: label_text.into(),
-            x: mid_x,
-            y: (from_y + to_y) / 2.0,
+            x: label_x,
+            y: label_y,
             width: label_width,
             height: label_height,
         });
+        
+        edge_index += 1;
     }
 
     (segments, corners, labels)
@@ -1025,6 +1084,7 @@ fn push_segment(
     x2: f32,
     y2: f32,
     thickness: f32,
+    edge_index: i32,
 ) {
     if (x1 - x2).abs() < f32::EPSILON && (y1 - y2).abs() < f32::EPSILON {
         return;
@@ -1045,6 +1105,7 @@ fn push_segment(
         y,
         width,
         height,
+        edge_index,
     });
 }
 
