@@ -39,11 +39,13 @@ export struct EdgeSegmentVm {
     y: float,
     width: float,
     height: float,
+    edge_index: int,
 }
 
 export struct EdgeCornerVm {
     x: float,
     y: float,
+    edge_index: int,
 }
 
 export struct EdgeLabelVm {
@@ -489,16 +491,16 @@ component GraphCanvas inherits Rectangle {
         y: segment.y * 1px;
         width: segment.width * 1px;
         height: segment.height * 1px;
-        background: edges[idx].is_selected ? #4caf50 : #ffffff;
+        background: edges[segment.edge_index].is_selected ? #4caf50 : #ffffff;
         border-radius: (root.edge_thickness / 2) * 1px;
         
         TouchArea {
             clicked => {
                 root.edge_clicked(
-                    edges[idx].from_node_id,
-                    edges[idx].from_port,
-                    edges[idx].to_node_id,
-                    edges[idx].to_port
+                    edges[segment.edge_index].from_node_id,
+                    edges[segment.edge_index].from_port,
+                    edges[segment.edge_index].to_node_id,
+                    edges[segment.edge_index].to_port
                 );
             }
         }
@@ -509,16 +511,16 @@ component GraphCanvas inherits Rectangle {
         y: (corner.y - root.edge_thickness / 2) * 1px;
         width: root.edge_thickness * 1px;
         height: root.edge_thickness * 1px;
-        background: edges[idx].is_selected ? #4caf50 : #ffffff;
+        background: edges[corner.edge_index].is_selected ? #4caf50 : #ffffff;
         border-radius: (root.edge_thickness / 2) * 1px;
         
         TouchArea {
             clicked => {
                 root.edge_clicked(
-                    edges[idx].from_node_id,
-                    edges[idx].from_port,
-                    edges[idx].to_node_id,
-                    edges[idx].to_port
+                    edges[corner.edge_index].from_node_id,
+                    edges[corner.edge_index].from_port,
+                    edges[corner.edge_index].to_node_id,
+                    edges[corner.edge_index].to_port
                 );
             }
         }
