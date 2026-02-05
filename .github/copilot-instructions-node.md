@@ -119,35 +119,156 @@ impl NodeGraph {
      - For each EventProducer root (no EventProducer dependencies), call `on_start()`, then loop `on_update()` → run reachable nodes downstream → `on_cleanup()`.
      - EventProducers can be nested (one EventProducer feeds another).
 
-## Built-in Utility Nodes
+## Built-in Node Components
 
-### ConditionalNode
-Branching node:
+### Utility Nodes (`src/node/util_nodes.rs`)
+
+#### ConditionalNode
+Conditional branching based on boolean input:
 
 ```rust
 pub struct ConditionalNode;
 
 // Input ports:
-// - "condition" (Boolean, required)
-// - "true_value" (Json, optional, defaults to null)
-// - "false_value" (Json, optional, defaults to null)
+// - "condition" (Boolean, required): Condition to evaluate
+// - "true_value" (Json, optional): Value to output if condition is true
+// - "false_value" (Json, optional): Value to output if condition is false
 
 // Output ports:
-// - "result" (Json): Selected value
+// - "result" (Json): Selected value based on condition
 // - "branch_taken" (String): "true" or "false"
 ```
 
-### JsonParserNode
-Parse/validate JSON:
+#### JsonParserNode
+Parse JSON string to structured data:
 
 ```rust
 pub struct JsonParserNode;
 
-// Input: "json_string" (String)
-// Output: "parsed_json" (Json), "is_valid" (Boolean)
+// Input ports:
+// - "json_string" (String, required): JSON string to parse
+
+// Output ports:
+// - "parsed" (Json): Parsed JSON object
+// - "success" (Boolean): Whether parsing was successful
 ```
 
-Found in `src/node/util_nodes.rs`.
+### LLM Integration Nodes (`src/llm/node_impl.rs`)
+
+#### LLMNode
+Wraps LLM API for text generation:
+
+```rust
+pub struct LLMNode;
+
+// Input ports:
+// - "prompt" (String, required): User prompt to send to LLM
+// - "messages" (Json, optional): Full message history
+// - "max_tokens" (Integer, optional): Maximum tokens in response
+
+// Output ports:
+// - "response" (String): LLM response text
+// - "full_message" (Json): Complete message object from LLM
+// - "token_usage" (Json): Token usage information
+
+// Builder methods:
+// - with_llm_api(LLMAPI): Configure LLM API instance
+// - with_system_prompt(String): Set system prompt
+```
+
+#### AgentNode
+AI Agent with tool-calling capabilities:
+
+```rust
+pub struct AgentNode;
+
+// Input ports:
+// - "task" (String, required): Task description for the agent
+// - "context" (Json, optional): Additional context information
+// - "tools" (Json, optional): Available tools for the agent
+
+// Output ports:
+// - "result" (String): Agent execution result
+// - "tool_calls" (Json): Tools called during execution
+// - "execution_log" (Json): Detailed execution log
+
+// Constructor:
+// - new(id, name, agent_type): agent_type specifies agent behavior
+```
+
+#### TextProcessorNode
+Text processing operations (uppercase, lowercase, trim, reverse):
+
+```rust
+pub struct TextProcessorNode;
+
+// Input ports:
+// - "text" (String, required): Input text to process
+// - "params" (Json, optional): Processing parameters
+
+// Output ports:
+// - "processed_text" (String): Processed text output
+// - "metadata" (Json): Processing metadata (operation, input_length)
+
+// Constructor:
+// - new(id, name, operation): operation = "uppercase"|"lowercase"|"trim"|"reverse"
+```
+
+### Bot Adapter Nodes (`src/bot_adapter/`)
+
+#### BotAdapterNode (`node_impl.rs`)
+EventProducer node that receives messages from QQ bot server:
+
+```rust
+pub struct BotAdapterNode;  // NodeType::EventProducer
+
+// Input ports:
+// - "trigger" (Boolean, required): Trigger to start receiving messages
+// - "qq_id" (String, optional): QQ ID to login
+
+// Output ports:
+// - "message" (MessageEvent): Raw message event from QQ server
+// - "message_event" (MessageEvent): Same as message (alias)
+// - "bot_adapter" (BotAdapterRef): Shared bot adapter handle
+// - "message_type" (String): Type of the message
+// - "user_id" (String): User ID who sent the message
+// - "content" (String): Message content
+
+// Lifecycle: Spawns async WebSocket client in on_start(), yields events via on_update()
+```
+
+#### MessageSenderNode (`node_impl.rs`)
+Sends messages back to QQ server:
+
+```rust
+pub struct MessageSenderNode;
+
+// Input ports:
+// - "bot_adapter" (BotAdapterRef, required): Bot adapter instance
+// - "user_id" (String, required): Target user ID
+// - "group_id" (String, optional): Target group ID
+// - "message" (String, required): Message text to send
+// - "reply_to" (String, optional): Message ID to reply to
+
+// Output ports:
+// - "success" (Boolean): Whether message was sent successfully
+// - "message_id" (String): ID of sent message (if successful)
+```
+
+#### MessageEventToStringNode (`message_event_to_string.rs`)
+Converts MessageEvent to LLM prompt string:
+
+```rust
+pub struct MessageEventToStringNode;
+
+// Input ports:
+// - "message_event" (MessageEvent, required): MessageEvent containing message data
+
+// Output ports:
+// - "prompt" (String): Formatted LLM prompt string (includes content + quoted text)
+
+// Note: Uses MessageProp::from_messages() to extract content and ref_content
+```
 
 ## Node Implementation Example
 
@@ -295,9 +416,106 @@ Nodes validate:
 
 Return `Result<HashMap<String, DataValue>>` or `Result<()>` for lifecycle methods.
 
-## Integration with LLM Agent
+## Node Registry (`src/node/registry.rs`)
 
-LLM-based nodes in `src/llm/node_impl.rs` (e.g., `LLMNode`, `AgentNode`) accept tool definitions and produce JSON outputs (chat responses, tool calls). They integrate into NodeGraphs to orchestrate multi-step reasoning pipelines.
+Global registry for node type discovery and instantiation:
+
+```rust
+pub static NODE_REGISTRY: Lazy<NodeRegistry>;
+
+// Register a node type:
+NODE_REGISTRY.register(
+    "type_id",           // Unique type identifier
+    "Display Name",      // Human-readable name (supports Chinese)
+    "Category",          // Group nodes by category ("工具", "AI", "适配器", etc.)
+    "Description",       // Brief description
+    factory_fn,          // Arc<dyn Fn(String, String) -> Box<dyn Node>>
+)?;
+
+// Create node instance:
+let node = NODE_REGISTRY.create_node("conditional", "node_id", "My Node")?;
+
+// Query registry:
+let all_types = NODE_REGISTRY.get_all_types();  // Vec<NodeTypeMetadata>
+let categories = NODE_REGISTRY.get_categories();
+let ai_nodes = NODE_REGISTRY.get_types_by_category("AI");
+```
+
+**Currently Registered Node Types** (initialized in `init_node_registry()`):
+
+| Type ID | Display Name | Category | Node Struct |
+|---------|-------------|----------|-------------|
+| `conditional` | 条件分支 | 工具 | ConditionalNode |
+| `json_parser` | JSON解析器 | 工具 | JsonParserNode |
+| `llm` | 大语言模型 | AI | LLMNode |
+| `agent` | AI Agent | AI | AgentNode |
+| `text_processor` | 文本处理器 | 工具 | TextProcessorNode |
+| `bot_adapter` | QQ机器人适配器 | 适配器 | BotAdapterNode |
+| `message_sender` | 消息发送器 | Bot适配器 | MessageSenderNode |
+| `message_event_to_string` | 消息转字符串 | Bot适配器 | MessageEventToStringNode |
+
+**Helper Macro for Registration**:
+
+```rust
+register_node!(
+    "type_id",
+    "Display Name",
+    "Category",
+    "Description",
+    NodeStruct
+);
+```
+
+## Integration Patterns
+
+### Bot Message Processing Pipeline
+
+Typical flow for QQ bot with LLM:
+
+```rust
+let mut graph = NodeGraph::new();
+
+// 1. Receive messages from QQ (EventProducer)
+graph.add_node(Box::new(BotAdapterNode::new("bot", "QQ Bot")));
+
+// 2. Convert message to LLM prompt
+graph.add_node(Box::new(MessageEventToStringNode::new("msg_to_str", "ToPrompt")));
+
+// 3. Process with LLM
+graph.add_node(Box::new(LLMNode::new("llm", "LLM").with_llm_api(api)));
+
+// 4. Send response back
+graph.add_node(Box::new(MessageSenderNode::new("sender", "Send Reply")));
+
+// Port bindings (automatic by name matching):
+// bot.message_event → msg_to_str.message_event
+// msg_to_str.prompt → llm.prompt
+// bot.bot_adapter → sender.bot_adapter
+// bot.user_id → sender.user_id
+// llm.response → sender.message
+
+graph.execute()?;
+```
+
+### Multi-Step Agent Workflow
+
+Agent with conditional branching:
+
+```rust
+// 1. Agent analyzes task
+let agent = AgentNode::new("agent", "Task Agent", "analyzer");
+
+// 2. Conditional routing based on tool calls
+let conditional = ConditionalNode::new("branch", "Route");
+
+// 3. Different text processors for different paths
+let uppercase = TextProcessorNode::new("upper", "Uppercase", "uppercase");
+let lowercase = TextProcessorNode::new("lower", "Lowercase", "lowercase");
+
+// Port connections:
+// agent.tool_calls → (parse to boolean) → branch.condition
+// branch.result → upper.text OR lower.text
+```
 
 ## Testing
 
@@ -342,11 +560,91 @@ fn test_graph_execution() -> Result<()> {
 
 ## Extensions
 
-To add a new node type:
+### Adding a New Node Type
 
-1. Create a struct implementing `Node`.
-2. Implement all required trait methods.
-3. Register in any pipeline that needs it (e.g., add to `NodeGraph` in `src/main.rs` or in test harness).
-4. For LLM-based nodes, extend `src/llm/node_impl.rs` and define tool outputs.
+1. **Create node struct** implementing `Node` trait in appropriate module:
+   - Utility nodes → `src/node/util_nodes.rs`
+   - LLM nodes → `src/llm/node_impl.rs`
+   - Bot adapter nodes → `src/bot_adapter/node_impl.rs`
+   - New category → create new file in `src/node/`
 
-To modify the core execution model (e.g., parallel execution, streaming), update `NodeGraph::execute()` and lifecycle hooks while preserving the `Node` trait interface.
+2. **Implement all required trait methods**:
+   ```rust
+   pub struct MyCustomNode {
+       id: String,
+       name: String,
+       // ... custom fields
+   }
+   
+   impl Node for MyCustomNode {
+       fn id(&self) -> &str { &self.id }
+       fn name(&self) -> &str { &self.name }
+       fn description(&self) -> Option<&str> { Some("...") }
+       fn input_ports(&self) -> Vec<Port> { vec![...] }
+       fn output_ports(&self) -> Vec<Port> { vec![...] }
+       fn execute(&mut self, inputs: HashMap<String, DataValue>) -> Result<HashMap<String, DataValue>> {
+           // Implementation
+       }
+   }
+   ```
+
+3. **Register in `src/node/registry.rs`**:
+   ```rust
+   pub fn init_node_registry() -> Result<()> {
+       // ... existing registrations
+       
+       register_node!(
+           "my_custom",
+           "My Custom Node",
+           "Custom Category",
+           "Node description",
+           MyCustomNode
+       );
+       
+       Ok(())
+   }
+   ```
+
+4. **For EventProducer nodes**, override lifecycle methods:
+   ```rust
+   fn node_type(&self) -> NodeType { NodeType::EventProducer }
+   fn on_start(&mut self, inputs: HashMap<String, DataValue>) -> Result<()> { /* init */ }
+   fn on_update(&mut self) -> Result<Option<HashMap<String, DataValue>>> { /* loop */ }
+   fn on_cleanup(&mut self) -> Result<()> { /* cleanup */ }
+   ```
+
+5. **Add to UI** (if needed): Node will automatically appear in GUI after registration.
+
+### Modifying Core Execution
+
+To enhance the execution model (parallel execution, streaming, etc.):
+
+1. **Preserve `Node` trait interface** for backward compatibility
+2. **Update `NodeGraph::execute()`** in `src/node/mod.rs`
+3. **Modify lifecycle hooks** if needed (`on_start`/`on_update`/`on_cleanup`)
+4. **Update validation logic** in `build_output_producer_map()` and topological sort
+5. **Test with existing nodes** to ensure no regressions
+
+### Custom Data Types
+
+To add new port data types beyond String/Integer/Float/Boolean/Json/Binary:
+
+1. **Extend `DataType` enum** in `src/node/data_value.rs`:
+   ```rust
+   pub enum DataType {
+       // ... existing types
+       MessageEvent,      // Custom type
+       BotAdapterRef,     // Custom type
+   }
+   ```
+
+2. **Extend `DataValue` enum**:
+   ```rust
+   pub enum DataValue {
+       // ... existing variants
+       MessageEvent(MessageEvent),
+       BotAdapterRef(SharedBotAdapter),
+   }
+   ```
+
+3. **Update validation logic** in `Port::validate_value()` and type conversion helpers.

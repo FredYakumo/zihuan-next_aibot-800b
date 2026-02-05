@@ -32,9 +32,6 @@ struct Args {
     #[arg(long = "graph-json", value_name = "PATH", help = "从JSON读取节点图（可选）")]
     graph_json: Option<String>,
 
-    #[arg(long = "save-graph-json", value_name = "PATH", help = "保存节点图为JSON")]
-    save_graph_json: Option<String>,
-
     #[arg(long = "no-gui", help = "不打开GUI界面")]
     no_gui: bool,
 }
@@ -54,7 +51,7 @@ async fn main() {
     // Parse command line arguments
     let args = Args::parse();
 
-    if args.graph_json.is_some() || args.save_graph_json.is_some() || !args.no_gui {
+    if args.graph_json.is_some()  || !args.no_gui {
         let mut graph = if let Some(path) = args.graph_json.as_ref() {
             match node::load_graph_definition_from_json(path) {
                 Ok(graph) => Some(graph),
@@ -69,18 +66,6 @@ async fn main() {
 
         if let Some(graph) = graph.as_mut() {
             node::ensure_positions(graph);
-        }
-
-        if let Some(save_path) = args.save_graph_json.as_ref() {
-            if let Some(graph) = graph.as_ref() {
-                if let Err(err) = node::save_graph_definition_to_json(save_path, graph) {
-                    error!("Failed to save graph JSON: {}", err);
-                    return;
-                }
-            } else if args.no_gui {
-                error!("No graph loaded to save. Use --graph-json to load a graph.");
-                return;
-            }
         }
 
         if !args.no_gui {
