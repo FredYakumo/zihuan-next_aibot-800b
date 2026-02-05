@@ -23,6 +23,7 @@ const GRID_SIZE: f32 = 20.0;
 const NODE_WIDTH_CELLS: f32 = 10.0;
 const NODE_HEADER_ROWS: f32 = 2.0;
 const NODE_MIN_ROWS: f32 = 3.0;
+const NODE_PADDING_BOTTOM: f32 = 0.8;
 const CANVAS_WIDTH: f32 = 860.0;
 const CANVAS_HEIGHT: f32 = 760.0;
 const EDGE_THICKNESS_RATIO: f32 = 0.3;
@@ -303,9 +304,15 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
     ui.on_node_resize_finished(move |node_id: SharedString, width: f32, height: f32| {
         let mut graph = graph_state_clone.borrow_mut();
         let snapped_width = snap_to_grid(width).max(GRID_SIZE * NODE_WIDTH_CELLS);
-        let min_height = GRID_SIZE * NODE_MIN_ROWS;
-        let snapped_height = snap_to_grid(height).max(min_height);
         if let Some(node) = graph.nodes.iter_mut().find(|n| n.id == node_id.as_str()) {
+            let min_height = GRID_SIZE
+                * (NODE_MIN_ROWS
+                    .max(NODE_HEADER_ROWS + node
+                        .input_ports
+                        .len()
+                        .max(node.output_ports.len()) as f32)
+                    + NODE_PADDING_BOTTOM);
+            let snapped_height = snap_to_grid(height).max(min_height);
             node.size = Some(crate::node::graph_io::GraphSize {
                 width: snapped_width,
                 height: snapped_height,
@@ -1032,7 +1039,7 @@ fn node_dimensions(node: &crate::node::graph_io::NodeDefinition) -> (f32, f32) {
         .input_ports
         .len()
         .max(node.output_ports.len()) as f32;
-    let min_height = GRID_SIZE * (NODE_MIN_ROWS.max(NODE_HEADER_ROWS + port_rows));
+    let min_height = GRID_SIZE * (NODE_MIN_ROWS.max(NODE_HEADER_ROWS + port_rows) + NODE_PADDING_BOTTOM);
 
     match &node.size {
         Some(size) => (size.width.max(min_width), size.height.max(min_height)),

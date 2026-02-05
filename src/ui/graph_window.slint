@@ -157,11 +157,15 @@ component NodeItem inherits Rectangle {
     property <float> resize-start-pointer-y: 0;
     property <float> resize-start-width: 0;
     property <float> resize-start-height: 0;
+    property <float> inner-padding-bottom: grid_size * 0.8;
 
     x: (x_pos + offset-x) * 1px;
     y: (y_pos + offset-y) * 1px;
     width: max(node_width, grid_size * node_width_cells) * 1px;
-    height: max(node_height, grid_size * max(min_rows, header_rows + max(input_ports.length, output_ports.length))) * 1px;
+    height: max(
+        node_height,
+        grid_size * max(min_rows, header_rows + max(input_ports.length, output_ports.length)) + inner-padding-bottom
+    ) * 1px;
     background: touch.pressed ? #3a3a3a : #2b2b2b;
     border-radius: 8px;
     border-width: is_selected ? 2px : 1px;
@@ -307,9 +311,9 @@ component NodeItem inherits Rectangle {
 
     Rectangle {
         x: root.width - (grid_size * 0.6) * 1px;
-        y: root.height - (grid_size * 0.6) * 1px;
-        width: (grid_size * 0.6) * 1px;
-        height: (grid_size * 0.6) * 1px;
+        y: root.height - (grid_size * 0.5) * 1px - (grid_size * 0.1) * 1px;
+        width: (grid_size * 0.5) * 1px;
+        height: (grid_size * 0.5) * 1px;
         background: #4a4a4a;
         border-radius: 3px;
 
