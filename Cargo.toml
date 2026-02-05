@@ -23,3 +23,5 @@ thiserror = "2.0.17"
 clap = { version = "4.5", features = ["derive"] }
 sqlx = { version = "0.7", features = ["runtime-tokio-native-tls", "mysql", "chrono"] }
 chrono = { version = "0.4", features = ["serde"] }
+slint = { version = "1.15", features = ["unstable-fontique-07"] }
+rfd = "0.14"

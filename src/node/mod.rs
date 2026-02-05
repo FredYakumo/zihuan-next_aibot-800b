@@ -6,17 +6,29 @@ pub enum NodeType {
     EventProducer,
 }
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use crate::error::Result;
 
 pub mod data_value;
 pub mod util_nodes;
+pub mod graph_io;
 
+#[allow(unused_imports)]
 pub use data_value::{DataType, DataValue};
+#[allow(unused_imports)]
+pub use graph_io::{
+    NodeGraphDefinition,
+    NodeDefinition,
+    EdgeDefinition,
+    GraphPosition,
+    load_graph_definition_from_json,
+    save_graph_definition_to_json,
+    ensure_positions,
+};
 
 /// Node input/output ports
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Port {
     pub name: String,
     pub data_type: DataType,
@@ -491,6 +503,10 @@ impl NodeGraph {
                 })
             }).collect::<Vec<_>>(),
         })
+    }
+
+    pub fn to_definition(&self) -> NodeGraphDefinition {
+        NodeGraphDefinition::from_node_graph(self)
     }
 }
 

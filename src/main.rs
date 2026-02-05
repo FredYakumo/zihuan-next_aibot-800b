@@ -4,6 +4,7 @@ mod llm;
 mod config;
 mod error;
 mod node;
+mod ui;
 
 use log::{info, error, warn};
 use log_util::log_util::LogUtil;
@@ -28,8 +29,14 @@ lazy_static! {
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
-    #[arg(short = 'l', long = "login-qq", help = "登录的QQ号（必填）")]
-    qq_id: String,
+    #[arg(long = "graph-json", value_name = "PATH", help = "从JSON读取节点图（可选）")]
+    graph_json: Option<String>,
+
+    #[arg(long = "save-graph-json", value_name = "PATH", help = "保存节点图为JSON")]
+    save_graph_json: Option<String>,
+
+    #[arg(long = "no-gui", help = "不打开GUI界面")]
+    no_gui: bool,
 }
 
 #[tokio::main]
@@ -40,8 +47,47 @@ async fn main() {
     // Parse command line arguments
     let args = Args::parse();
 
+    if args.graph_json.is_some() || args.save_graph_json.is_some() || !args.no_gui {
+        let mut graph = if let Some(path) = args.graph_json.as_ref() {
+            match node::load_graph_definition_from_json(path) {
+                Ok(graph) => Some(graph),
+                Err(err) => {
+                    error!("Failed to load graph JSON: {}", err);
+                    return;
+                }
+            }
+        } else {
+            None
+        };
+
+        if let Some(graph) = graph.as_mut() {
+            node::ensure_positions(graph);
+        }
+
+        if let Some(save_path) = args.save_graph_json.as_ref() {
+            if let Some(graph) = graph.as_ref() {
+                if let Err(err) = node::save_graph_definition_to_json(save_path, graph) {
+                    error!("Failed to save graph JSON: {}", err);
+                    return;
+                }
+            } else if args.no_gui {
+                error!("No graph loaded to save. Use --graph-json to load a graph.");
+                return;
+            }
+        }
+
+        if !args.no_gui {
+            if let Err(err) = ui::node_graph_view::show_graph(graph) {
+                error!("Failed to render graph: {}", err);
+            }
+        }
+
+        return;
+    }
+
+    let qq_id = String::new();
+
     info!("zihuan_next_aibot-800b starting...");
-    info!("登录的QQ号: {}", args.qq_id);
 
     // Load configuration from config.yaml, fallback to environment variables
     let config = load_config();
@@ -103,7 +149,7 @@ async fn main() {
     let adapter_config = BotAdapterConfig::new(
         config.bot_server_url,
         config.bot_server_token,
-        args.qq_id,
+        qq_id,
     )
     .with_redis_url(redis_url)
     .with_database_url(database_url)

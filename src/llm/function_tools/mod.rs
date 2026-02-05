@@ -41,8 +41,12 @@ pub mod chat_history;
 pub mod nl_reply;
 pub mod code_writer;
 
+#[allow(unused_imports)]
 pub use math::MathTool;
+#[allow(unused_imports)]
 pub use chat_history::ChatHistoryTool;
+#[allow(unused_imports)]
 pub use nl_reply::NaturalLanguageReplyTool;
+#[allow(unused_imports)]
 pub use code_writer::CodeWriterTool;
 

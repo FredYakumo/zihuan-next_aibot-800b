@@ -72,7 +72,7 @@ impl Agent for BrainAgent {
             user_text = "(无文本内容，可能是仅@或回复)".to_string();
         }
 
-        let user_text_for_reply = user_text.clone();
+        let _user_text_for_reply = user_text.clone();
         let mut brain_message_list = vec![system_msg, UserMessage(user_text)];
 
         info!("[BrainAgent] llm [{}] inference...", self.llm.get_model_name());

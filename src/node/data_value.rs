@@ -1,4 +1,4 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::fmt;
 use std::sync::Arc;
@@ -7,7 +7,7 @@ use crate::bot_adapter::adapter::SharedBotAdapter;
 use crate::bot_adapter::models::event_model::MessageEvent;
 
 /// Dataflow datatype. Use for checking compatibility between ports.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum DataType {
     String,
     Integer,
