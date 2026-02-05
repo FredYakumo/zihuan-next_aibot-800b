@@ -69,11 +69,18 @@ component NodeItem inherits Rectangle {
     in property <[PortVm]> output_ports;
     
     callback node_moved(float, float);
+    callback node_move_finished(float, float);
     callback port_clicked(string, string, bool);
     callback port_drag_start(string, string, bool);
 
-    x: x_pos * 1px;
-    y: y_pos * 1px;
+    property <float> offset-x: 0;
+    property <float> offset-y: 0;
+    property <float> drag-start-x: 0;
+    property <float> drag-start-y: 0;
+    property <bool> is-dragging: false;
+
+    x: (x_pos + offset-x) * 1px;
+    y: (y_pos + offset-y) * 1px;
     width: 180px;
     height: 80px + max(input_ports.length, output_ports.length) * 20px;
     background: touch.pressed ? #3a3a3a : #2b2b2b;
@@ -82,12 +89,26 @@ component NodeItem inherits Rectangle {
     border-color: #4a4a4a;
 
     touch := TouchArea {
+        pointer-event(event) => {
+            if (event.kind == PointerEventKind.down) {
+                is-dragging = true;
+                drag-start-x = self.mouse-x / 1px;
+                drag-start-y = self.mouse-y / 1px;
+            } else if (event.kind == PointerEventKind.up) {
+                is-dragging = false;
+                offset-x = (self.mouse-x / 1px - drag-start-x);
+                offset-y = (self.mouse-y / 1px - drag-start-y);
+                root.node_moved(root.x_pos + offset-x, root.y_pos + offset-y);
+                root.node_move_finished(root.x_pos + offset-x, root.y_pos + offset-y);
+            }
+        }
+        
         moved => {
-            if (self.pressed) {
-                root.node_moved(
-                    (root.x_pos * 1px + self.mouse-x - self.pressed-x) / 1px,
-                    (root.y_pos * 1px + self.mouse-y - self.pressed-y) / 1px
-                );
+            if (self.pressed && is-dragging) {
+                // Calculate offset and move node directly to follow mouse
+                offset-x = (self.mouse-x / 1px - drag-start-x);
+                offset-y = (self.mouse-y / 1px - drag-start-y);
+                root.node_moved(root.x_pos + offset-x, root.y_pos + offset-y);
             }
         }
     }
@@ -193,6 +214,7 @@ component GraphCanvas inherits Rectangle {
     in property <[EdgeVm]> edges;
     
     callback node_moved(string, float, float);
+    callback node_move_finished(string, float, float);
     callback port_clicked(string, string, bool);
     callback drag_end_at(string, string, bool, float, float);
 
@@ -258,6 +280,10 @@ component GraphCanvas inherits Rectangle {
         node_moved(x, y) => {
             root.node_moved(node.id, x, y);
         }
+
+        node_move_finished(x, y) => {
+            root.node_move_finished(node.id, x, y);
+        }
         
         port_clicked(node_id, port_name, is_input) => {
             root.port_clicked(node_id, port_name, is_input);
@@ -284,6 +310,7 @@ export component NodeGraphWindow inherits Window {
     callback show_node_type_menu();
     callback hide_node_type_menu();
     callback node_moved(string, float, float);
+    callback node_move_finished(string, float, float);
     callback port_clicked(string, string, bool);
     callback drag_end_at(string, string, bool, float, float);
 
@@ -303,6 +330,10 @@ export component NodeGraphWindow inherits Window {
             
             node_moved(node_id, x, y) => {
                 root.node_moved(node_id, x, y);
+            }
+
+            node_move_finished(node_id, x, y) => {
+                root.node_move_finished(node_id, x, y);
             }
             
             port_clicked(node_id, port_name, is_input) => {

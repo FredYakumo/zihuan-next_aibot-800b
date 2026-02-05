@@ -111,9 +111,58 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
             }
         }
         
-        // Update UI to redraw edges
+        // Update edges based on new node positions during drag
         if let Some(ui) = ui_handle.upgrade() {
-            apply_graph_to_ui(&ui, &graph, None);
+            let edges: Vec<EdgeVm> = graph
+                .edges
+                .iter()
+                .filter_map(|edge| {
+                    let from_node = graph.nodes.iter().find(|n| n.id == edge.from_node_id)?;
+                    let to_node = graph.nodes.iter().find(|n| n.id == edge.to_node_id)?;
+                    
+                    let from_pos = from_node.position.as_ref()?;
+                    let to_pos = to_node.position.as_ref()?;
+                    
+                    let from_x = from_pos.x + 180.0;
+                    let from_y = from_pos.y + 50.0;
+                    
+                    let to_x = to_pos.x;
+                    let to_y = to_pos.y + 50.0;
+                    
+                    Some(EdgeVm {
+                        from_node_id: edge.from_node_id.clone().into(),
+                        from_port: edge.from_port.clone().into(),
+                        to_node_id: edge.to_node_id.clone().into(),
+                        to_port: edge.to_port.clone().into(),
+                        from_x: from_x.into(),
+                        from_y: from_y.into(),
+                        to_x: to_x.into(),
+                        to_y: to_y.into(),
+                    })
+                })
+                .collect();
+            
+            ui.set_edges(ModelRc::new(VecModel::from(edges)));
+        }
+    });
+
+    let ui_handle = ui.as_weak();
+    let graph_state_clone = Rc::clone(&graph_state);
+    let current_file_clone = Rc::clone(&current_file);
+    ui.on_node_move_finished(move |node_id: SharedString, x: f32, y: f32| {
+        let mut graph = graph_state_clone.borrow_mut();
+        if let Some(node) = graph.nodes.iter_mut().find(|n| n.id == node_id.as_str()) {
+            if let Some(pos) = &mut node.position {
+                pos.x = x;
+                pos.y = y;
+            } else {
+                node.position = Some(crate::node::graph_io::GraphPosition { x, y });
+            }
+        }
+
+        let label = current_file_clone.borrow().clone();
+        if let Some(ui) = ui_handle.upgrade() {
+            apply_graph_to_ui(&ui, &graph, Some(label));
         }
     });
 
