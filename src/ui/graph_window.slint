@@ -265,41 +265,43 @@ component NodeItem inherits Rectangle {
         }
     }
 
-    for port[i] in input_ports: CjkText {
-        text: port.name;
-        color: #cccccc;
-        font-size: 10px;
-        vertical-alignment: center;
+    for port[i] in input_ports: Rectangle {
         x: (grid_size) * 1px;
         y: (grid_size * header_rows + i * grid_size) * 1px;
-        width: (grid_size * 1.8) * 1px;
+        width: root.width - (grid_size * 2.5) * 1px;
         height: (grid_size) * 1px;
-        overflow: elide;
-    }
 
-    for port[i] in input_ports: LineEdit {
-        visible: !port.is_connected && (port.data_type == "String" || port.data_type == "Integer" || port.data_type == "Float");
-        x: (grid_size * 2.9) * 1px;
-        y: (grid_size * header_rows + i * grid_size + grid_size * 0.1) * 1px;
-        width: min(root.width - (grid_size * 3.6) * 1px, (grid_size * 6.0) * 1px);
-        height: (grid_size * 0.8) * 1px;
-        text: port.inline_text;
-        placeholder-text: port.data_type;
-        edited(text) => {
-            root.inline_port_text_changed(root.node_id, port.name, text);
-        }
-    }
+        HorizontalLayout {
+            alignment: start;
+            spacing: 5px;
 
-    for port[i] in input_ports: CheckBox {
-        visible: !port.is_connected && (port.data_type == "Boolean");
-        x: (grid_size * 2.9) * 1px;
-        y: (grid_size * header_rows + i * grid_size + grid_size * 0.15) * 1px;
-        width: (grid_size * 2.0) * 1px;
-        height: (grid_size * 0.7) * 1px;
-        text: "";
-        checked: port.inline_bool;
-        toggled => {
-            root.inline_port_bool_changed(root.node_id, port.name, self.checked);
+            CjkText {
+                text: port.name;
+                color: #cccccc;
+                font-size: 10px;
+                vertical-alignment: center;
+                overflow: elide;
+                horizontal-stretch: 0;
+            }
+
+            if (!port.is_connected && (port.data_type == "String" || port.data_type == "Integer" || port.data_type == "Float")): LineEdit {
+                width: min(parent.width * 0.5, 120px);
+                height: (grid_size * 0.8) * 1px;
+                text: port.inline_text;
+                placeholder-text: port.data_type;
+                edited(text) => {
+                    root.inline_port_text_changed(root.node_id, port.name, text);
+                }
+            }
+
+            if (!port.is_connected && (port.data_type == "Boolean")): CheckBox {
+                height: (grid_size * 0.7) * 1px;
+                text: "";
+                checked: port.inline_bool;
+                toggled => {
+                    root.inline_port_bool_changed(root.node_id, port.name, self.checked);
+                }
+            }
         }
     }
 
