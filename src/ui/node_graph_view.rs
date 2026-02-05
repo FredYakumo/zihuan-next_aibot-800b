@@ -177,6 +177,40 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
     });
 
     let ui_handle = ui.as_weak();
+    let graph_state_clone = Rc::clone(&graph_state);
+    ui.on_run_graph(move || {
+        let graph_def = graph_state_clone.borrow();
+        
+        // Build node graph from definition and execute
+        match crate::node::registry::build_node_graph_from_definition(&graph_def) {
+            Ok(mut node_graph) => {
+                println!("开始执行节点图...");
+                match node_graph.execute() {
+                    Ok(_) => {
+                        println!("节点图执行成功!");
+                        if let Some(ui) = ui_handle.upgrade() {
+                            // Update connection status to show success
+                            ui.set_connection_status("✓ 节点图执行成功".into());
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("节点图执行失败: {}", e);
+                        if let Some(ui) = ui_handle.upgrade() {
+                            ui.invoke_show_error(format!("执行错误：{}", e).into());
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                eprintln!("构建节点图失败: {}", e);
+                if let Some(ui) = ui_handle.upgrade() {
+                    ui.invoke_show_error(format!("构建节点图失败：{}", e).into());
+                }
+            }
+        }
+    });
+
+    let ui_handle = ui.as_weak();
     let all_node_types_clone = Rc::clone(&all_node_types);
     ui.on_filter_nodes(move |search_text: SharedString, category: SharedString| {
         if let Some(ui) = ui_handle.upgrade() {
@@ -212,6 +246,21 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
     ui.on_hide_node_type_menu(move || {
         if let Some(ui) = ui_handle.upgrade() {
             ui.set_show_node_selector(false);
+        }
+    });
+
+    let ui_handle = ui.as_weak();
+    ui.on_show_error(move |message: SharedString| {
+        if let Some(ui) = ui_handle.upgrade() {
+            ui.set_error_dialog_message(message);
+            ui.set_show_error_dialog(true);
+        }
+    });
+
+    let ui_handle = ui.as_weak();
+    ui.on_hide_error(move || {
+        if let Some(ui) = ui_handle.upgrade() {
+            ui.set_show_error_dialog(false);
         }
     });
 

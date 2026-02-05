@@ -121,6 +121,31 @@ component CjkDeleteButton inherits Rectangle {
     }
 }
 
+component CjkRunButton inherits Rectangle {
+    in property <string> text;
+    callback clicked();
+
+    width: 120px;
+    height: 32px;
+    background: #2e7d32;
+    border-radius: 6px;
+    border-width: 1px;
+    border-color: #4caf50;
+
+    TouchArea {
+        clicked => { root.clicked(); }
+    }
+
+    CjkText {
+        text: root.text;
+        color: #ffffff;
+        vertical-alignment: center;
+        horizontal-alignment: center;
+        font-size: 12px;
+        font-weight: 700;
+    }
+}
+
 component NodeItem inherits Rectangle {
     in property <string> node_id;
     in property <string> label;
@@ -612,6 +637,111 @@ component GraphCanvas inherits Rectangle {
 }
 
 
+export component ErrorDialog inherits Rectangle {
+    in property <string> error_message;
+    callback close();
+
+    background: #00000080;
+
+    TouchArea {
+        clicked => { root.close(); }
+    }
+
+    Rectangle {
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        width: 800px;
+        height: 200px;
+        background: #2b2b2b;
+        border-radius: 8px;
+        border-width: 1px;
+        border-color: #e57373; // Softer red
+
+        TouchArea {} // Block clicks
+
+        VerticalLayout {
+            padding: 20px;
+            spacing: 12px;
+
+            // Top area: icon and content
+            HorizontalLayout {
+                spacing: 16px;
+
+                // Error icon
+                Rectangle {
+                    width: 48px;
+                    
+                    VerticalLayout {
+                        alignment: start;
+                        
+                        Rectangle {
+                            width: 36px;
+                            height: 36px;
+                            border-radius: 18px;
+                            background: #e57373;
+
+                            CjkText {
+                                text: "!";
+                                font-size: 24px;
+                                color: #ffffff;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                                font-weight: 700;
+                            }
+                        }
+                    }
+                }
+
+                // Content area
+                VerticalLayout {
+                    spacing: 8px;
+                    
+                    // Title
+                    CjkText {
+                        text: "节点图执行失败";
+                        font-size: 16px;
+                        color: #ef5350;
+                        font-weight: 700;
+                        horizontal-alignment: left;
+                    }
+
+                    // Error message with scrollbar
+                    Rectangle {
+                        background: #2c2020; // Slightly reddish dark background
+                        border-radius: 4px;
+                        border-width: 1px;
+                        border-color: #5c3030;
+                        
+                        ScrollView {
+                            VerticalLayout {
+                                padding: 10px;
+                                
+                                CjkText {
+                                    text: root.error_message;
+                                    font-size: 12px;
+                                    color: #ffcdd2; // Light red text
+                                    wrap: word-wrap;
+                                    horizontal-alignment: left;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Bottom button area
+            HorizontalBox {
+                alignment: center;
+                
+                CjkButton {
+                    text: "确定";
+                    clicked => { root.close(); }
+                }
+            }
+        }
+    }
+}
+
 export component NodeSelector inherits Rectangle {
     in property <[NodeTypeVm]> node_types;
     in property <[string]> categories;
@@ -866,12 +996,17 @@ export component NodeGraphWindow inherits Window {
     in property <float> port_hint_x: 0;
     in property <float> port_hint_y: 0;
     in property <bool> show_port_hint: false;
+    in property <bool> show_error_dialog: false;
+    in property <string> error_dialog_message: "";
 
     callback open_json();
     callback save_json();
     callback add_node(string);
+    callback run_graph();
     callback show_node_type_menu();
     callback hide_node_type_menu();
+    callback show_error(string);
+    callback hide_error();
     callback node_moved(string, float, float);
     callback node_move_finished(string, float, float);
     callback port_clicked(string, string, bool);
@@ -1030,6 +1165,11 @@ export component NodeGraphWindow inherits Window {
                     clicked => { root.show_node_type_menu(); }
                 }
                 
+                CjkRunButton {
+                    text: "运行节点图";
+                    clicked => { root.run_graph(); }
+                }
+                
                 if root.selected_node_count > 0 || root.selected_edge_from_node != "": CjkDeleteButton {
                     text: root.selected_node_count > 1 ? "删除选中节点" : "删除选中";
                     clicked => { root.delete_selected(); }
@@ -1070,5 +1210,10 @@ export component NodeGraphWindow inherits Window {
             root.hide_node_type_menu(); 
         }
         filter(text, category) => { root.filter_nodes(text, category); }
+    }
+
+    if root.show_error_dialog: ErrorDialog {
+        error_message: root.error_dialog_message;
+        close => { root.hide_error(); }
     }
 }

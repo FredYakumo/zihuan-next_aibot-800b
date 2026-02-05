@@ -200,3 +200,22 @@ pub fn init_node_registry() -> Result<()> {
 
     Ok(())
 }
+
+/// Build a NodeGraph from a NodeGraphDefinition
+pub fn build_node_graph_from_definition(
+    definition: &crate::node::graph_io::NodeGraphDefinition,
+) -> Result<crate::node::NodeGraph> {
+    let mut graph = crate::node::NodeGraph::new();
+
+    // Create all nodes
+    for node_def in &definition.nodes {
+        let node = NODE_REGISTRY.create_node(
+            &node_def.node_type,
+            node_def.id.clone(),
+            node_def.name.clone(),
+        )?;
+        graph.add_node(node)?;
+    }
+
+    Ok(graph)
+}
