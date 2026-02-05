@@ -15,9 +15,10 @@ use crate::ui::graph_window::{
     EdgeCornerVm, EdgeLabelVm, EdgeSegmentVm, EdgeVm, GridLineVm, NodeGraphWindow, NodeTypeVm,
     NodeVm, PortVm,
 };
+use crate::ui::selection::{setup_selection_callbacks, BoxSelection};
 
 const GRID_SIZE: f32 = 20.0;
-const NODE_WIDTH_CELLS: f32 = 6.0;
+const NODE_WIDTH_CELLS: f32 = 8.0;
 const NODE_HEADER_ROWS: f32 = 2.0;
 const CANVAS_WIDTH: f32 = 860.0;
 const CANVAS_HEIGHT: f32 = 760.0;
@@ -30,6 +31,8 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
         .map_err(|e| crate::error::Error::StringError(format!("UI error: {e}")))?;
 
     let graph_state = Rc::new(RefCell::new(initial_graph.unwrap_or_default()));
+    let selection_state = Rc::new(RefCell::new(crate::ui::selection::SelectionState::default()));
+
     let current_file = Rc::new(RefCell::new(
         if graph_state.borrow().nodes.is_empty() && graph_state.borrow().edges.is_empty() {
             "未加载 节点图".to_string()
@@ -58,11 +61,13 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
         &ui,
         &graph_state.borrow(),
         Some(current_file.borrow().clone()),
+        &selection_state.borrow(),
     );
 
     let ui_handle = ui.as_weak();
     let graph_state_clone = Rc::clone(&graph_state);
     let current_file_clone = Rc::clone(&current_file);
+    let selection_state_clone = Rc::clone(&selection_state);
     ui.on_open_json(move || {
         if let Some(path) = rfd::FileDialog::new()
             .add_filter("Node Graph", &["json"])
@@ -73,7 +78,7 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
                     *graph_state_clone.borrow_mut() = graph;
                     let label = path.display().to_string();
                     *current_file_clone.borrow_mut() = label.clone();
-                    apply_graph_to_ui(&ui, &graph_state_clone.borrow(), Some(label));
+                    apply_graph_to_ui(&ui, &graph_state_clone.borrow(), Some(label), &selection_state_clone.borrow());
                 }
             }
         }
@@ -82,6 +87,7 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
     let ui_handle = ui.as_weak();
     let graph_state_clone = Rc::clone(&graph_state);
     let current_file_clone = Rc::clone(&current_file);
+    let selection_state_clone = Rc::clone(&selection_state);
     ui.on_add_node(move |type_id: SharedString| {
         let type_id_str = type_id.as_str();
         let mut graph = graph_state_clone.borrow_mut();
@@ -92,7 +98,7 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
         let label = "已修改(未保存)".to_string();
         *current_file_clone.borrow_mut() = label.clone();
         if let Some(ui) = ui_handle.upgrade() {
-            apply_graph_to_ui(&ui, &graph, Some(label));
+            apply_graph_to_ui(&ui, &graph, Some(label), &selection_state_clone.borrow());
         }
     });
 
@@ -112,6 +118,7 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
 
     let ui_handle = ui.as_weak();
     let graph_state_clone = Rc::clone(&graph_state);
+    let selection_state_clone = Rc::clone(&selection_state);
     ui.on_node_moved(move |node_id: SharedString, x: f32, y: f32| {
         let mut graph = graph_state_clone.borrow_mut();
         let snapped_x = snap_to_grid(x);
@@ -130,6 +137,12 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
         
         // Update edges based on new node positions during drag
         if let Some(ui) = ui_handle.upgrade() {
+            let selection = selection_state_clone.borrow();
+            let selected_edge_from_node = &selection.selected_edge_from_node;
+            let selected_edge_from_port = &selection.selected_edge_from_port;
+            let selected_edge_to_node = &selection.selected_edge_to_node;
+            let selected_edge_to_port = &selection.selected_edge_to_port;
+            
             let edges: Vec<EdgeVm> = graph
                 .edges
                 .iter()
@@ -140,6 +153,12 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
                     let (from_x, from_y) = get_port_center_for_node(from_node, &edge.from_port, false)?;
                     let (to_x, to_y) = get_port_center_for_node(to_node, &edge.to_port, true)?;
                     
+                    let is_selected = !selected_edge_from_node.is_empty()
+                        && edge.from_node_id == selected_edge_from_node.as_str()
+                        && edge.from_port == selected_edge_from_port.as_str()
+                        && edge.to_node_id == selected_edge_to_node.as_str()
+                        && edge.to_port == selected_edge_to_port.as_str();
+                    
                     Some(EdgeVm {
                         from_node_id: edge.from_node_id.clone().into(),
                         from_port: edge.from_port.clone().into(),
@@ -149,6 +168,7 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
                         from_y: from_y.into(),
                         to_x: to_x.into(),
                         to_y: to_y.into(),
+                        is_selected,
                     })
                 })
                 .collect();
@@ -165,6 +185,7 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
     let ui_handle = ui.as_weak();
     let graph_state_clone = Rc::clone(&graph_state);
     let current_file_clone = Rc::clone(&current_file);
+    let selection_state_clone = Rc::clone(&selection_state);
     ui.on_node_move_finished(move |node_id: SharedString, x: f32, y: f32| {
         let mut graph = graph_state_clone.borrow_mut();
         let snapped_x = snap_to_grid(x);
@@ -183,7 +204,7 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
 
         let label = current_file_clone.borrow().clone();
         if let Some(ui) = ui_handle.upgrade() {
-            apply_graph_to_ui(&ui, &graph, Some(label));
+            apply_graph_to_ui(&ui, &graph, Some(label), &selection_state_clone.borrow());
         }
     });
 
@@ -196,6 +217,7 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
     let ui_handle_for_click = ui.as_weak();
     let ui_handle_for_move = ui.as_weak();
     let ui_handle_for_cancel = ui.as_weak();
+    let selection_state_clone = Rc::clone(&selection_state);
 
     ui.on_port_clicked(move |node_id: SharedString, port_name: SharedString, is_input: bool| {
         let node_id_str = node_id.to_string();
@@ -226,7 +248,7 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
                 if let Some(ui) = ui_handle_for_click.upgrade() {
                     ui.set_drag_line_visible(false);
                     ui.set_connection_status("".into());
-                    apply_graph_to_ui(&ui, &graph, Some(label));
+                    apply_graph_to_ui(&ui, &graph, Some(label), &selection_state_clone.borrow());
                 }
             } else {
                 *selection = Some((prev_node, prev_port, prev_is_input));
@@ -270,6 +292,92 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
         if let Some(ui) = ui_handle_for_cancel.upgrade() {
             ui.set_drag_line_visible(false);
             ui.set_connection_status("".into());
+        }
+    });
+
+    // Setup selection callbacks using the selection module
+    let selection_state_for_cb = Rc::clone(&selection_state);
+    let apply_graph_fn = move |ui: &NodeGraphWindow, graph: &NodeGraphDefinition, file: Option<String>| {
+        apply_graph_to_ui(ui, graph, file, &selection_state_for_cb.borrow());
+    };
+    
+    setup_selection_callbacks(
+        &ui, 
+        Rc::clone(&graph_state), 
+        Rc::clone(&current_file), 
+        apply_graph_fn,
+        Rc::clone(&selection_state)
+    );
+    
+    // Setup box selection
+    let box_selection = Rc::new(RefCell::new(BoxSelection::new()));
+    
+    let ui_handle = ui.as_weak();
+    let box_selection_clone = Rc::clone(&box_selection);
+    ui.on_box_selection_start(move |x: f32, y: f32| {
+        let mut box_sel = box_selection_clone.borrow_mut();
+        box_sel.start(x, y);
+        
+        if let Some(ui) = ui_handle.upgrade() {
+            ui.set_box_selection_visible(true);
+            ui.set_box_selection_x(x);
+            ui.set_box_selection_y(y);
+            ui.set_box_selection_width(0.0);
+            ui.set_box_selection_height(0.0);
+        }
+    });
+    
+    let ui_handle = ui.as_weak();
+    let box_selection_clone = Rc::clone(&box_selection);
+    ui.on_box_selection_update(move |x: f32, y: f32| {
+        let mut box_sel = box_selection_clone.borrow_mut();
+        box_sel.update(x, y);
+        
+        if let Some(ui) = ui_handle.upgrade() {
+            let (min_x, min_y, max_x, max_y) = box_sel.get_bounds();
+            ui.set_box_selection_x(min_x);
+            ui.set_box_selection_y(min_y);
+            ui.set_box_selection_width(max_x - min_x);
+            ui.set_box_selection_height(max_y - min_y);
+        }
+    });
+    
+    let ui_handle = ui.as_weak();
+    let box_selection_clone = Rc::clone(&box_selection);
+    let graph_state_clone = Rc::clone(&graph_state);
+    let current_file_clone = Rc::clone(&current_file);
+    let selection_state_clone = Rc::clone(&selection_state);
+    ui.on_box_selection_end(move || {
+        if let Some(ui) = ui_handle.upgrade() {
+            let mut box_sel = box_selection_clone.borrow_mut();
+            let graph = graph_state_clone.borrow();
+            
+            // Find nodes within the selection box
+            let mut selected_nodes = Vec::new();
+            for node in &graph.nodes {
+                if let Some(pos) = &node.position {
+                    let node_width = GRID_SIZE * NODE_WIDTH_CELLS;
+                    let node_height = GRID_SIZE * 5.0; // Approximate height
+                    
+                    if box_sel.contains_rect(pos.x, pos.y, node_width, node_height) {
+                        selected_nodes.push(node.id.clone());
+                    }
+                }
+            }
+            
+            let mut selection = selection_state_clone.borrow_mut();
+            // Clear existing selection and select all found nodes
+            selection.clear();
+            for node_id in selected_nodes {
+                selection.select_node(node_id, true);
+            }
+            selection.apply_to_ui(&ui); // To update count and other properties
+            
+            let label = current_file_clone.borrow().clone();
+            apply_graph_to_ui(&ui, &graph, Some(label), &selection.clone());
+            
+            box_sel.end();
+            ui.set_box_selection_visible(false);
         }
     });
 
@@ -324,6 +432,7 @@ fn apply_graph_to_ui(
     ui: &NodeGraphWindow,
     graph: &NodeGraphDefinition,
     current_file: Option<String>,
+    selection_state: &crate::ui::selection::SelectionState,
 ) {
     let mut graph = graph.clone();
     ensure_positions(&mut graph);
@@ -334,6 +443,11 @@ fn apply_graph_to_ui(
             pos.y = snap_to_grid(pos.y);
         }
     }
+    
+    let selected_edge_from_node = &selection_state.selected_edge_from_node;
+    let selected_edge_from_port = &selection_state.selected_edge_from_port;
+    let selected_edge_to_node = &selection_state.selected_edge_to_node;
+    let selected_edge_to_port = &selection_state.selected_edge_to_port;
 
     let nodes: Vec<NodeVm> = graph
         .nodes
@@ -341,22 +455,37 @@ fn apply_graph_to_ui(
         .map(|node| {
             let position = node.position.as_ref();
             let label = format!("{}", node.name);
+            let is_selected = selection_state.selected_node_ids.contains(&node.id);
             
             let input_ports: Vec<PortVm> = node
                 .input_ports
                 .iter()
-                .map(|p| PortVm {
-                    name: p.name.clone().into(),
-                    is_input: true,
+                .map(|p| {
+                    let is_connected = graph.edges.iter().any(|e| {
+                        e.to_node_id == node.id && e.to_port == p.name
+                    });
+                    PortVm {
+                        name: p.name.clone().into(),
+                        is_input: true,
+                        is_connected,
+                        is_required: p.required,
+                    }
                 })
                 .collect();
             
             let output_ports: Vec<PortVm> = node
                 .output_ports
                 .iter()
-                .map(|p| PortVm {
-                    name: p.name.clone().into(),
-                    is_input: false,
+                .map(|p| {
+                    let is_connected = graph.edges.iter().any(|e| {
+                        e.from_node_id == node.id && e.from_port == p.name
+                    });
+                    PortVm {
+                        name: p.name.clone().into(),
+                        is_input: false,
+                        is_connected,
+                        is_required: false,
+                    }
                 })
                 .collect();
 
@@ -367,6 +496,7 @@ fn apply_graph_to_ui(
                 y: position.map(|p| snap_to_grid(p.y)).unwrap_or(0.0),
                 input_ports: ModelRc::new(VecModel::from(input_ports)),
                 output_ports: ModelRc::new(VecModel::from(output_ports)),
+                is_selected,
             }
         })
         .collect();
@@ -382,6 +512,12 @@ fn apply_graph_to_ui(
             let (from_x, from_y) = get_port_center_for_node(from_node, &edge.from_port, false)?;
             let (to_x, to_y) = get_port_center_for_node(to_node, &edge.to_port, true)?;
             
+            let is_selected = !selected_edge_from_node.is_empty()
+                && edge.from_node_id == selected_edge_from_node.as_str()
+                && edge.from_port == selected_edge_from_port.as_str()
+                && edge.to_node_id == selected_edge_to_node.as_str()
+                && edge.to_port == selected_edge_to_port.as_str();
+            
             Some(EdgeVm {
                 from_node_id: edge.from_node_id.clone().into(),
                 from_port: edge.from_port.clone().into(),
@@ -391,6 +527,7 @@ fn apply_graph_to_ui(
                 from_y: from_y.into(),
                 to_x: to_x.into(),
                 to_y: to_y.into(),
+                is_selected,
             })
         })
         .collect();

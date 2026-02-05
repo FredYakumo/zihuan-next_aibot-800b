@@ -3,6 +3,8 @@ import { HorizontalBox, VerticalBox, ScrollView } from "std-widgets.slint";
 export struct PortVm {
     name: string,
     is_input: bool,
+    is_connected: bool,
+    is_required: bool,
 }
 
 export struct NodeVm {
@@ -12,6 +14,7 @@ export struct NodeVm {
     y: float,
     input_ports: [PortVm],
     output_ports: [PortVm],
+    is_selected: bool,
 }
 
 export struct EdgeVm {
@@ -23,6 +26,7 @@ export struct EdgeVm {
     from_y: float,
     to_x: float,
     to_y: float,
+    is_selected: bool,
 }
 
 export struct EdgeSegmentVm {
@@ -87,6 +91,31 @@ component CjkButton inherits Rectangle {
     }
 }
 
+component CjkDeleteButton inherits Rectangle {
+    in property <string> text;
+    callback clicked();
+
+    width: 120px;
+    height: 32px;
+    background: #d32f2f;
+    border-radius: 6px;
+    border-width: 1px;
+    border-color: #f44336;
+
+    TouchArea {
+        clicked => { root.clicked(); }
+    }
+
+    CjkText {
+        text: root.text;
+        color: #ffffff;
+        vertical-alignment: center;
+        horizontal-alignment: center;
+        font-size: 12px;
+        font-weight: 700;
+    }
+}
+
 component NodeItem inherits Rectangle {
     in property <string> node_id;
     in property <string> label;
@@ -98,10 +127,12 @@ component NodeItem inherits Rectangle {
     in property <float> node_width_cells;
     in property <float> header_rows;
     in property <float> min_rows;
+    in property <bool> is_selected;
     
     callback node_moved(float, float);
     callback node_move_finished(float, float);
     callback port_clicked(string, string, bool);
+    callback node_clicked(string);
 
     property <float> offset-x: 0;
     property <float> offset-y: 0;
@@ -115,10 +146,14 @@ component NodeItem inherits Rectangle {
     height: (grid_size * max(min_rows, header_rows + max(input_ports.length, output_ports.length))) * 1px;
     background: touch.pressed ? #3a3a3a : #2b2b2b;
     border-radius: 8px;
-    border-width: 1px;
-    border-color: #4a4a4a;
+    border-width: is_selected ? 2px : 1px;
+    border-color: is_selected ? #4caf50 : #4a4a4a;
 
     touch := TouchArea {
+        clicked => {
+            root.node_clicked(root.node_id);
+        }
+        
         pointer-event(event) => {
             if (event.kind == PointerEventKind.down) {
                 is-dragging = true;
@@ -161,9 +196,9 @@ component NodeItem inherits Rectangle {
         width: (grid_size * 0.6) * 1px;
         height: (grid_size * 0.6) * 1px;
         border-radius: (grid_size * 0.3) * 1px;
-        background: #7a5a1f;
+        background: port.is_connected ? #2d8659 : (port.is_required ? #d32f2f : #666666);
         border-width: 1px;
-        border-color: #b58a3b;
+        border-color: port.is_connected ? #4caf50 : (port.is_required ? #f44336 : #999999);
 
         TouchArea {
             pointer-event(event) => {
@@ -191,9 +226,9 @@ component NodeItem inherits Rectangle {
         width: (grid_size * 0.6) * 1px;
         height: (grid_size * 0.6) * 1px;
         border-radius: (grid_size * 0.3) * 1px;
-        background: #7a5a1f;
+        background: port.is_connected ? #7a5a1f : #666666;
         border-width: 1px;
-        border-color: #b58a3b;
+        border-color: port.is_connected ? #b58a3b : #999999;
 
         TouchArea {
             pointer-event(event) => {
@@ -231,12 +266,23 @@ component GraphCanvas inherits Rectangle {
     in property <float> drag_line_from_y;
     in property <float> drag_line_to_x;
     in property <float> drag_line_to_y;
+    in property <bool> box_selection_visible;
+    in property <float> box_selection_x;
+    in property <float> box_selection_y;
+    in property <float> box_selection_width;
+    in property <float> box_selection_height;
     
     callback node_moved(string, float, float);
     callback node_move_finished(string, float, float);
     callback port_clicked(string, string, bool);
     callback pointer_moved(float, float);
     callback cancel_connect();
+    callback node_clicked(string);
+    callback edge_clicked(string, string, string, string);
+    callback canvas_clicked();
+    callback box_selection_start(float, float);
+    callback box_selection_update(float, float);
+    callback box_selection_end();
 
     in-out property <bool> dragging: false;
     in-out property <string> drag_from_node_id: "";
@@ -271,33 +317,78 @@ component GraphCanvas inherits Rectangle {
     }
 
     drag_area := TouchArea {
+        property <bool> is_box_selecting: false;
+        
+        clicked => {
+            if !is_box_selecting {
+                root.canvas_clicked();
+            }
+        }
+        
         pointer-event(event) => {
-            if (event.kind == PointerEventKind.down && event.button == PointerEventButton.right) {
-                root.cancel_connect();
+            if (event.kind == PointerEventKind.down) {
+                if (event.button == PointerEventButton.right) {
+                    root.cancel_connect();
+                } else if (event.button == PointerEventButton.left && event.modifiers.control) {
+                    // Start box selection with Ctrl held
+                    is_box_selecting = true;
+                    root.box_selection_start(self.mouse-x / 1px, self.mouse-y / 1px);
+                }
+            } else if (event.kind == PointerEventKind.up) {
+                if (is_box_selecting) {
+                    is_box_selecting = false;
+                    root.box_selection_end();
+                }
             }
         }
 
         moved => {
-            root.pointer_moved(self.mouse-x / 1px, self.mouse-y / 1px);
+            if (is_box_selecting) {
+                root.box_selection_update(self.mouse-x / 1px, self.mouse-y / 1px);
+            } else {
+                root.pointer_moved(self.mouse-x / 1px, self.mouse-y / 1px);
+            }
         }
     }
 
-    for segment in edge_segments: Rectangle {
+    for segment[idx] in edge_segments: Rectangle {
         x: segment.x * 1px;
         y: segment.y * 1px;
         width: segment.width * 1px;
         height: segment.height * 1px;
-        background: #ffffff;
+        background: edges[idx].is_selected ? #4caf50 : #ffffff;
         border-radius: (root.edge_thickness / 2) * 1px;
+        
+        TouchArea {
+            clicked => {
+                root.edge_clicked(
+                    edges[idx].from_node_id,
+                    edges[idx].from_port,
+                    edges[idx].to_node_id,
+                    edges[idx].to_port
+                );
+            }
+        }
     }
 
-    for corner in edge_corners: Rectangle {
+    for corner[idx] in edge_corners: Rectangle {
         x: (corner.x - root.edge_thickness / 2) * 1px;
         y: (corner.y - root.edge_thickness / 2) * 1px;
         width: root.edge_thickness * 1px;
         height: root.edge_thickness * 1px;
-        background: #ffffff;
+        background: edges[idx].is_selected ? #4caf50 : #ffffff;
         border-radius: (root.edge_thickness / 2) * 1px;
+        
+        TouchArea {
+            clicked => {
+                root.edge_clicked(
+                    edges[idx].from_node_id,
+                    edges[idx].from_port,
+                    edges[idx].to_node_id,
+                    edges[idx].to_port
+                );
+            }
+        }
     }
 
     for label in edge_labels: Rectangle {
@@ -352,6 +443,18 @@ component GraphCanvas inherits Rectangle {
             y: root.drag_line_to_y;
         }
     }
+    
+    // Box selection rectangle
+    if root.box_selection_visible: Rectangle {
+        x: root.box_selection_x * 1px;
+        y: root.box_selection_y * 1px;
+        width: root.box_selection_width * 1px;
+        height: root.box_selection_height * 1px;
+        background: #4caf5030;
+        border-width: 2px;
+        border-color: #4caf50;
+        border-radius: 0px;
+    }
 
     for node in nodes: NodeItem {
         node_id: node.id;
@@ -361,9 +464,10 @@ component GraphCanvas inherits Rectangle {
         input_ports: node.input_ports;
         output_ports: node.output_ports;
         grid_size: root.grid_size;
-        node_width_cells: 6;
+        node_width_cells: 8;
         header_rows: 2;
         min_rows: 3;
+        is_selected: node.is_selected;
         
         node_moved(x, y) => {
             root.node_moved(node.id, x, y);
@@ -375,6 +479,10 @@ component GraphCanvas inherits Rectangle {
         
         port_clicked(node_id, port_name, is_input) => {
             root.port_clicked(node_id, port_name, is_input);
+        }
+        
+        node_clicked(node_id) => {
+            root.node_clicked(node_id);
         }
     }
 }
@@ -401,6 +509,16 @@ export component NodeGraphWindow inherits Window {
     in-out property <string> drag_from_node_id: "";
     in-out property <string> drag_from_port: "";
     in-out property <bool> drag_from_is_input: false;
+    in property <int> selected_node_count: 0;
+    in property <string> selected_edge_from_node: "";
+    in property <string> selected_edge_from_port: "";
+    in property <string> selected_edge_to_node: "";
+    in property <string> selected_edge_to_port: "";
+    in property <bool> box_selection_visible: false;
+    in property <float> box_selection_x: 0;
+    in property <float> box_selection_y: 0;
+    in property <float> box_selection_width: 0;
+    in property <float> box_selection_height: 0;
 
     callback open_json();
     callback add_node(string);
@@ -411,6 +529,13 @@ export component NodeGraphWindow inherits Window {
     callback port_clicked(string, string, bool);
     callback pointer_moved(float, float);
     callback cancel_connect();
+    callback node_clicked(string);
+    callback edge_clicked(string, string, string, string);
+    callback canvas_clicked();
+    callback delete_selected();
+    callback box_selection_start(float, float);
+    callback box_selection_update(float, float);
+    callback box_selection_end();
 
     title: "Zihuan Node Graph Viewer";
     width: 1200px;
@@ -440,6 +565,11 @@ export component NodeGraphWindow inherits Window {
             drag_from_node_id: root.drag_from_node_id;
             drag_from_port: root.drag_from_port;
             drag_from_is_input: root.drag_from_is_input;
+            box_selection_visible: root.box_selection_visible;
+            box_selection_x: root.box_selection_x;
+            box_selection_y: root.box_selection_y;
+            box_selection_width: root.box_selection_width;
+            box_selection_height: root.box_selection_height;
             
             node_moved(node_id, x, y) => {
                 root.node_moved(node_id, x, y);
@@ -458,6 +588,30 @@ export component NodeGraphWindow inherits Window {
             cancel_connect() => {
                 root.cancel_connect();
             }
+            
+            node_clicked(node_id) => {
+                root.node_clicked(node_id);
+            }
+            
+            edge_clicked(from_node, from_port, to_node, to_port) => {
+                root.edge_clicked(from_node, from_port, to_node, to_port);
+            }
+            
+            canvas_clicked() => {
+                root.canvas_clicked();
+            }
+            
+            box_selection_start(x, y) => {
+                root.box_selection_start(x, y);
+            }
+            
+            box_selection_update(x, y) => {
+                root.box_selection_update(x, y);
+            }
+            
+            box_selection_end() => {
+                root.box_selection_end();
+            }
         }
 
         VerticalBox {
@@ -473,6 +627,11 @@ export component NodeGraphWindow inherits Window {
             CjkButton {
                 text: "新增节点";
                 clicked => { root.show_node_type_menu(); }
+            }
+            
+            if root.selected_node_count > 0 || root.selected_edge_from_node != "": CjkDeleteButton {
+                text: root.selected_node_count > 1 ? "删除选中节点" : "删除选中";
+                clicked => { root.delete_selected(); }
             }
 
             CjkText {

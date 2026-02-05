@@ -122,6 +122,8 @@ macro_rules! register_node {
 pub fn init_node_registry() -> Result<()> {
     use crate::node::util_nodes::{ConditionalNode, JsonParserNode};
     use crate::llm::node_impl::{LLMNode, AgentNode, TextProcessorNode};
+    use crate::bot_adapter::node_impl::{BotAdapterNode, MessageSenderNode};
+    use crate::bot_adapter::message_event_to_string::MessageEventToStringNode;
 
     // Utility nodes
     register_node!(
@@ -171,8 +173,30 @@ pub fn init_node_registry() -> Result<()> {
         }),
     )?;
 
-    // Bot adapter nodes - these are more complex, user can register manually if needed
-    // or we can add specialized registration functions
+    // Bot adapter nodes
+    register_node!(
+        "bot_adapter",
+        "QQ机器人适配器",
+        "Bot适配器",
+        "接收来自QQ服务器的消息事件",
+        BotAdapterNode
+    );
+
+    register_node!(
+        "message_sender",
+        "消息发送器",
+        "Bot适配器",
+        "向QQ服务器发送消息",
+        MessageSenderNode
+    );
+
+    register_node!(
+        "message_event_to_string",
+        "消息转字符串",
+        "Bot适配器",
+        "将消息事件转换为LLM提示文本",
+        MessageEventToStringNode
+    );
 
     Ok(())
 }
