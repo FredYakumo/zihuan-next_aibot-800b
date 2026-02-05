@@ -345,6 +345,12 @@ component GraphCanvas inherits Rectangle {
                     is_box_selecting = true;
                     root.box_selection_start(self.mouse-x / 1px, self.mouse-y / 1px);
                 }
+            } else if (event.kind == PointerEventKind.move) {
+                if (is_box_selecting) {
+                    root.box_selection_update(self.mouse-x / 1px, self.mouse-y / 1px);
+                } else {
+                    root.pointer_moved(self.mouse-x / 1px, self.mouse-y / 1px);
+                }
             } else if (event.kind == PointerEventKind.up) {
                 if (is_box_selecting) {
                     is_box_selecting = false;

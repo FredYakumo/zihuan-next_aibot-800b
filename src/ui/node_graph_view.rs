@@ -252,6 +252,7 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
         if let Some((prev_node, prev_port, prev_is_input)) = selection.take() {
             if prev_is_input != is_input {
                 let mut graph = graph_state_clone.borrow_mut();
+                ensure_positions(&mut graph);
 
                 let (from_node, from_port, to_node, to_port) = if is_input {
                     (prev_node, prev_port, node_id_str, port_name_str)
@@ -280,7 +281,8 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
         } else {
             *selection = Some((node_id_str.clone(), port_name_str.clone(), is_input));
             if let Some(ui) = ui_handle_for_click.upgrade() {
-                let graph = graph_state_clone.borrow();
+                let mut graph = graph_state_clone.borrow_mut();
+                ensure_positions(&mut graph);
                 if let Some((from_x, from_y)) =
                     get_port_center(&graph, node_id_str.as_str(), port_name_str.as_str(), is_input)
                 {
