@@ -52,8 +52,18 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
             description: meta.description.clone().into(),
         })
         .collect();
+
+    let mut categories: Vec<SharedString> = node_types
+        .iter()
+        .map(|n| n.category.clone())
+        .collect::<Vec<_>>();
+    categories.sort();
+    categories.dedup();
     
-    ui.set_available_node_types(ModelRc::new(VecModel::from(node_types)));
+    ui.set_node_categories(ModelRc::new(VecModel::from(categories)));
+    ui.set_available_node_types(ModelRc::new(VecModel::from(node_types.clone())));
+    
+    let all_node_types = Rc::new(node_types);
     ui.set_grid_size(GRID_SIZE);
     ui.set_edge_thickness(GRID_SIZE * EDGE_THICKNESS_RATIO);
 
@@ -103,8 +113,33 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
     });
 
     let ui_handle = ui.as_weak();
+    let all_node_types_clone = Rc::clone(&all_node_types);
+    ui.on_filter_nodes(move |search_text: SharedString, category: SharedString| {
+        if let Some(ui) = ui_handle.upgrade() {
+            let search_text = search_text.as_str().to_lowercase();
+            let category = category.as_str();
+
+            let filtered: Vec<NodeTypeVm> = all_node_types_clone
+                .iter()
+                .filter(|n| {
+                    let name_match = search_text.is_empty() 
+                        || n.display_name.to_lowercase().contains(&search_text) 
+                        || n.description.to_lowercase().contains(&search_text);
+                    let cat_match = category.is_empty() || n.category == category;
+                    name_match && cat_match
+                })
+                .cloned()
+                .collect();
+            
+            ui.set_available_node_types(ModelRc::new(VecModel::from(filtered)));
+        }
+    });
+
+    let ui_handle = ui.as_weak();
+    let all_node_types_clone = Rc::clone(&all_node_types);
     ui.on_show_node_type_menu(move || {
         if let Some(ui) = ui_handle.upgrade() {
+            ui.set_available_node_types(ModelRc::new(VecModel::from(all_node_types_clone.as_ref().clone())));
             ui.set_show_node_selector(true);
         }
     });

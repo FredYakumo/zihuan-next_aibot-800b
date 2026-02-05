@@ -1,4 +1,4 @@
-import { HorizontalBox, VerticalBox, ScrollView } from "std-widgets.slint";
+import { HorizontalBox, VerticalBox, ScrollView, LineEdit } from "std-widgets.slint";
 
 export struct PortVm {
     name: string,
@@ -487,6 +487,223 @@ component GraphCanvas inherits Rectangle {
     }
 }
 
+
+export component NodeSelector inherits Rectangle {
+    in property <[NodeTypeVm]> node_types;
+    in property <[string]> categories;
+    callback add_node(string);
+    callback close();
+    callback filter(string, string);
+    
+    // Internal state for UI feedback
+    property <string> current_search: "";
+    property <string> current_category: "";
+
+    background: #00000080;
+
+    TouchArea {
+        clicked => { root.close(); }
+    }
+
+    Rectangle {
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        width: 700px;
+        height: 600px;
+        background: #2b2b2b;
+        border-radius: 12px;
+        border-width: 2px;
+        border-color: #4a4a4a;
+
+        TouchArea {} // Block clicks
+
+        VerticalBox {
+            padding: 16px;
+            spacing: 12px;
+
+            CjkText {
+                text: "选择节点类型";
+                font-size: 18px;
+                color: #f0f0f0;
+                horizontal-alignment: center;
+                height: 30px;
+            }
+            
+            // Search and Filter
+            VerticalBox {
+                spacing: 8px;
+                
+                HorizontalBox {
+                    height: 35px;
+                    CjkText {
+                        text: "搜索:";
+                        vertical-alignment: center;
+                        width: 40px;
+                        color: #cccccc;
+                    }
+                    LineEdit {
+                         placeholder-text: "输入节点名称...";
+                         edited(text) => {
+                             root.current_search = text;
+                             root.filter(root.current_search, root.current_category);
+                         }
+                    }
+                }
+                
+                HorizontalBox {
+                   height: 40px;
+                   CjkText {
+                        text: "分类:";
+                        vertical-alignment: center;
+                        width: 40px;
+                        color: #cccccc;
+                   }
+                   ScrollView {
+                       HorizontalLayout {
+                           spacing: 8px;
+                           padding-right: 8px;
+                           alignment: start;
+                           
+                           // "All" button
+                           Rectangle {
+                               width: 60px;
+                               height: 30px;
+                               border-radius: 4px;
+                               background: root.current_category == "" ? #4caf50 : #3a3a3a;
+                               border-width: 1px;
+                               border-color: #555555;
+                               
+                               TouchArea {
+                                   clicked => {
+                                        root.current_category = "";
+                                        root.filter(root.current_search, root.current_category);
+                                   }
+                               }
+                               
+                               CjkText {
+                                   text: "全部";
+                                   color: #ffffff;
+                                   horizontal-alignment: center;
+                                   vertical-alignment: center;
+                                   font-size: 12px;
+                               }
+                           }
+
+                           for category in root.categories : Rectangle {
+                               width: 80px;
+                               height: 30px;
+                               border-radius: 4px;
+                               background: root.current_category == category ? #4caf50 : #3a3a3a;
+                               border-width: 1px;
+                               border-color: #555555;
+                               
+                               TouchArea {
+                                   clicked => {
+                                        root.current_category = category;
+                                        root.filter(root.current_search, root.current_category);
+                                   }
+                               }
+                               
+                               CjkText {
+                                   text: category;
+                                   color: #ffffff;
+                                   horizontal-alignment: center;
+                                   vertical-alignment: center;
+                                   font-size: 12px;
+                               }
+                           }
+                       }
+                   }
+                }
+            }
+
+            Rectangle {
+                background: #1e1e1e;
+                border-radius: 6px;
+                border-color: #333333;
+                border-width: 1px;
+                
+                ScrollView {
+                    viewport-width: parent.width;
+                    viewport-height: root.node_types.length * 85px; 
+
+                    VerticalBox {
+                        padding: 8px;
+                        spacing: 8px;
+                        alignment: start;
+
+                        for node_type in root.node_types: Rectangle {
+                            height: 80px;
+                            background: #2f2f2f;
+                            border-radius: 6px;
+                            border-width: 1px;
+                            border-color: #4a4a4a;
+
+                            TouchArea {
+                                clicked => { 
+                                    root.add_node(node_type.type_id);
+                                    root.close();
+                                }
+                            }
+
+                            VerticalLayout {
+                                padding: 10px;
+                                spacing: 6px;
+
+                                HorizontalLayout {
+                                    spacing: 8px;
+                                    CjkText {
+                                        text: node_type.display_name;
+                                        font-size: 16px;
+                                        color: #ffffff;
+                                        font-weight: 700;
+                                        vertical-alignment: center;
+                                    }
+
+                                    Rectangle {
+                                        background: #3a3a3a;
+                                        border-radius: 4px;
+                                        width: self.height * 2.5; 
+                                        
+                                        HorizontalLayout {
+                                            padding-left: 6px;
+                                            padding-right: 6px;
+                                            CjkText {
+                                                text: node_type.category;
+                                                font-size: 11px;
+                                                color: #aaaaaa;
+                                                vertical-alignment: center;
+                                                horizontal-alignment: center;
+                                            }
+                                        }
+                                    }
+                                }
+
+                                CjkText {
+                                    text: node_type.description;
+                                    font-size: 13px;
+                                    color: #bbbbbb;
+                                    wrap: word-wrap;
+                                    vertical-alignment: top;
+                                    overflow: elide;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            HorizontalBox {
+                alignment: center;
+                CjkButton {
+                    text: "取消";
+                    clicked => { root.close(); }
+                }
+            }
+        }
+    }
+}
+
 export component NodeGraphWindow inherits Window {
     in property <[NodeVm]> nodes;
     in property <[EdgeVm]> edges;
@@ -500,6 +717,8 @@ export component NodeGraphWindow inherits Window {
     in property <string> current_file;
     in property <bool> show_node_selector: false;
     in property <[NodeTypeVm]> available_node_types;
+    in property <[string]> node_categories;
+    callback filter_nodes(string, string);
     in property <bool> drag_line_visible: false;
     in property <float> drag_line_from_x: 0;
     in property <float> drag_line_from_y: 0;
@@ -675,123 +894,14 @@ export component NodeGraphWindow inherits Window {
         }
     }
 
-    if root.show_node_selector: Rectangle {
-        width: 100%;
-        height: 100%;
-        background: #00000080;
-
-        TouchArea {
-            clicked => { root.hide_node_type_menu(); }
+    if root.show_node_selector: NodeSelector {
+        node_types: root.available_node_types;
+        categories: root.node_categories;
+        close => { root.hide_node_type_menu(); }
+        add_node(type_id) => { 
+            root.add_node(type_id);
+            root.hide_node_type_menu(); 
         }
-
-        Rectangle {
-            x: (parent.width - self.width) / 2;
-            y: (parent.height - self.height) / 2;
-            width: 600px;
-            height: 500px;
-            background: #2b2b2b;
-            border-radius: 12px;
-            border-width: 2px;
-            border-color: #4a4a4a;
-
-            TouchArea {}
-
-            VerticalBox {
-                padding: 16px;
-                spacing: 12px;
-
-                CjkText {
-                    text: "选择节点类型";
-                    font-size: 18px;
-                    color: #f0f0f0;
-                    horizontal-alignment: center;
-                    height: 30px;
-                }
-
-                Rectangle {
-                    background: #1e1e1e;
-                    border-radius: 6px;
-                    border-color: #333333;
-                    border-width: 1px;
-                    
-                    ScrollView {
-                        viewport-width: parent.width;
-                        viewport-height: root.available_node_types.length * 85px; 
-
-                        VerticalBox {
-                            padding: 8px;
-                            spacing: 8px;
-                            alignment: start;
-
-                            for node_type in root.available_node_types: Rectangle {
-                                height: 80px;
-                                background: #2f2f2f;
-                                border-radius: 6px;
-                                border-width: 1px;
-                                border-color: #4a4a4a;
-
-                                TouchArea {
-                                    clicked => { 
-                                        root.add_node(node_type.type_id);
-                                        root.hide_node_type_menu();
-                                    }
-                                }
-
-                                VerticalLayout {
-                                    padding: 10px;
-                                    spacing: 6px;
-
-                                    HorizontalLayout {
-                                        spacing: 8px;
-                                        CjkText {
-                                            text: node_type.display_name;
-                                            font-size: 16px;
-                                            color: #ffffff;
-                                            font-weight: 700;
-                                            vertical-alignment: center;
-                                        }
-
-                                        Rectangle {
-                                            background: #3a3a3a;
-                                            border-radius: 4px;
-                                            width: self.height * 2.5; 
-                                            
-                                            HorizontalLayout {
-                                                padding-left: 6px;
-                                                padding-right: 6px;
-                                                CjkText {
-                                                    text: node_type.category;
-                                                    font-size: 11px;
-                                                    color: #aaaaaa;
-                                                    vertical-alignment: center;
-                                                    horizontal-alignment: center;
-                                                }
-                                            }
-                                        }
-                                    }
-
-                                    CjkText {
-                                        text: node_type.description;
-                                        font-size: 13px;
-                                        color: #bbbbbb;
-                                        wrap: word-wrap;
-                                        vertical-alignment: top;
-                                        overflow: elide;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                HorizontalBox {
-                    alignment: center;
-                    CjkButton {
-                        text: "取消";
-                        clicked => { root.hide_node_type_menu(); }
-                    }
-                }
-            }
-        }
+        filter(text, category) => { root.filter_nodes(text, category); }
     }
 }
