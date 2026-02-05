@@ -16,6 +16,7 @@ use crate::ui::graph_window::{
     NodeVm, PortVm,
 };
 use crate::ui::selection::{setup_selection_callbacks, BoxSelection};
+use crate::ui::window_state::{apply_window_state, load_window_state, save_window_state, WindowState};
 
 const GRID_SIZE: f32 = 20.0;
 const NODE_WIDTH_CELLS: f32 = 8.0;
@@ -29,6 +30,10 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
 
     let ui = NodeGraphWindow::new()
         .map_err(|e| crate::error::Error::StringError(format!("UI error: {e}")))?;
+
+    if let Some(state) = load_window_state() {
+        apply_window_state(&ui.window(), &state);
+    }
 
     let graph_state = Rc::new(RefCell::new(initial_graph.unwrap_or_default()));
     let selection_state = Rc::new(RefCell::new(crate::ui::selection::SelectionState::default()));
@@ -439,8 +444,15 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
         }
     });
 
-    ui.run()
-        .map_err(|e| crate::error::Error::StringError(format!("UI error: {e}")))
+    let run_result = ui.run();
+    if run_result.is_ok() {
+        let state = WindowState::from_window(&ui.window());
+        if let Err(e) = save_window_state(&state) {
+            eprintln!("Failed to save window state: {e}");
+        }
+    }
+
+    run_result.map_err(|e| crate::error::Error::StringError(format!("UI error: {e}")))
 }
 
 fn register_cjk_fonts() {
