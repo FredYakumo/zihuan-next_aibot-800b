@@ -21,6 +21,7 @@ pub struct NodeDefinition {
     pub input_ports: Vec<Port>,
     pub output_ports: Vec<Port>,
     pub position: Option<GraphPosition>,
+    pub size: Option<GraphSize>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -35,6 +36,12 @@ pub struct EdgeDefinition {
 pub struct GraphPosition {
     pub x: f32,
     pub y: f32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GraphSize {
+    pub width: f32,
+    pub height: f32,
 }
 
 pub fn load_graph_definition_from_json(path: impl AsRef<Path>) -> Result<NodeGraphDefinition> {
@@ -110,6 +117,7 @@ fn node_to_definition(id: &str, node: &dyn Node) -> NodeDefinition {
         input_ports: node.input_ports(),
         output_ports: node.output_ports(),
         position: None,
+        size: None,
     }
 }
 

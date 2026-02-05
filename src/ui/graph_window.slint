@@ -1,10 +1,13 @@
-import { HorizontalBox, VerticalBox, ScrollView, LineEdit } from "std-widgets.slint";
+import { HorizontalBox, VerticalBox, ScrollView, LineEdit, CheckBox } from "std-widgets.slint";
 
 export struct PortVm {
     name: string,
     is_input: bool,
     is_connected: bool,
     is_required: bool,
+    data_type: string,
+    inline_text: string,
+    inline_bool: bool,
 }
 
 export struct NodeVm {
@@ -12,6 +15,8 @@ export struct NodeVm {
     label: string,
     x: float,
     y: float,
+    width: float,
+    height: float,
     input_ports: [PortVm],
     output_ports: [PortVm],
     is_selected: bool,
@@ -121,6 +126,8 @@ component NodeItem inherits Rectangle {
     in property <string> label;
     in property <float> x_pos;
     in property <float> y_pos;
+    in-out property <float> node_width;
+    in-out property <float> node_height;
     in property <[PortVm]> input_ports;
     in property <[PortVm]> output_ports;
     in property <float> grid_size;
@@ -133,6 +140,10 @@ component NodeItem inherits Rectangle {
     callback node_move_finished(float, float);
     callback port_clicked(string, string, bool);
     callback node_clicked(string);
+    callback inline_port_text_changed(string, string, string);
+    callback inline_port_bool_changed(string, string, bool);
+    callback node_resized(float, float);
+    callback node_resize_finished(float, float);
 
     property <float> offset-x: 0;
     property <float> offset-y: 0;
@@ -141,11 +152,16 @@ component NodeItem inherits Rectangle {
     property <float> drag-start-node-x: 0;
     property <float> drag-start-node-y: 0;
     property <bool> is-dragging: false;
+    property <bool> is-resizing: false;
+    property <float> resize-start-pointer-x: 0;
+    property <float> resize-start-pointer-y: 0;
+    property <float> resize-start-width: 0;
+    property <float> resize-start-height: 0;
 
     x: (x_pos + offset-x) * 1px;
     y: (y_pos + offset-y) * 1px;
-    width: (grid_size * node_width_cells) * 1px;
-    height: (grid_size * max(min_rows, header_rows + max(input_ports.length, output_ports.length))) * 1px;
+    width: max(node_width, grid_size * node_width_cells) * 1px;
+    height: max(node_height, grid_size * max(min_rows, header_rows + max(input_ports.length, output_ports.length))) * 1px;
     background: touch.pressed ? #3a3a3a : #2b2b2b;
     border-radius: 8px;
     border-width: is_selected ? 2px : 1px;
@@ -227,12 +243,39 @@ component NodeItem inherits Rectangle {
         vertical-alignment: center;
         x: (grid_size) * 1px;
         y: (grid_size * header_rows + i * grid_size) * 1px;
-        width: (grid_size * (node_width_cells - 2)) * 1px;
+        width: (grid_size * 1.8) * 1px;
         height: (grid_size) * 1px;
+        overflow: elide;
+    }
+
+    for port[i] in input_ports: LineEdit {
+        visible: !port.is_connected && (port.data_type == "String" || port.data_type == "Integer" || port.data_type == "Float");
+        x: (grid_size * 2.9) * 1px;
+        y: (grid_size * header_rows + i * grid_size + grid_size * 0.1) * 1px;
+        width: root.width - (grid_size * 3.6) * 1px;
+        height: (grid_size * 0.8) * 1px;
+        text: port.inline_text;
+        placeholder-text: port.data_type;
+        edited(text) => {
+            root.inline_port_text_changed(root.node_id, port.name, text);
+        }
+    }
+
+    for port[i] in input_ports: CheckBox {
+        visible: !port.is_connected && (port.data_type == "Boolean");
+        x: (grid_size * 2.9) * 1px;
+        y: (grid_size * header_rows + i * grid_size + grid_size * 0.15) * 1px;
+        width: (grid_size * 2.0) * 1px;
+        height: (grid_size * 0.7) * 1px;
+        text: "";
+        checked: port.inline_bool;
+        toggled => {
+            root.inline_port_bool_changed(root.node_id, port.name, self.checked);
+        }
     }
 
     for port[i] in output_ports: Rectangle {
-        x: (grid_size * (node_width_cells - 1) + grid_size * 0.2) * 1px;
+        x: root.width - (grid_size * 0.8) * 1px;
         y: (grid_size * header_rows + i * grid_size + grid_size * 0.2) * 1px;
         width: (grid_size * 0.6) * 1px;
         height: (grid_size * 0.6) * 1px;
@@ -258,8 +301,44 @@ component NodeItem inherits Rectangle {
         horizontal-alignment: right;
         x: (grid_size) * 1px;
         y: (grid_size * header_rows + i * grid_size) * 1px;
-        width: (grid_size * (node_width_cells - 2)) * 1px;
+        width: root.width - (grid_size * 2) * 1px;
         height: (grid_size) * 1px;
+    }
+
+    Rectangle {
+        x: root.width - (grid_size * 0.6) * 1px;
+        y: root.height - (grid_size * 0.6) * 1px;
+        width: (grid_size * 0.6) * 1px;
+        height: (grid_size * 0.6) * 1px;
+        background: #4a4a4a;
+        border-radius: 3px;
+
+        TouchArea {
+            pointer-event(event) => {
+                if (event.kind == PointerEventKind.down) {
+                    root.is-resizing = true;
+                    root.resize-start-pointer-x = (self.mouse-x / 1px) + root.x / 1px;
+                    root.resize-start-pointer-y = (self.mouse-y / 1px) + root.y / 1px;
+                    root.resize-start-width = root.width / 1px;
+                    root.resize-start-height = root.height / 1px;
+                } else if (event.kind == PointerEventKind.up) {
+                    root.is-resizing = false;
+                    root.node_resize_finished(root.width / 1px, root.height / 1px);
+                }
+            }
+
+            moved => {
+                if (self.pressed && root.is-resizing) {
+                    let pointer-x = (self.mouse-x / 1px) + root.x / 1px;
+                    let pointer-y = (self.mouse-y / 1px) + root.y / 1px;
+                    let new-width = root.resize-start-width + (pointer-x - root.resize-start-pointer-x);
+                    let new-height = root.resize-start-height + (pointer-y - root.resize-start-pointer-y);
+                    root.node_width = new-width;
+                    root.node_height = new-height;
+                    root.node_resized(root.node_width, root.node_height);
+                }
+            }
+        }
     }
 }
 
@@ -294,6 +373,10 @@ component GraphCanvas inherits Rectangle {
     callback box_selection_start(float, float);
     callback box_selection_update(float, float);
     callback box_selection_end();
+    callback inline_port_text_changed(string, string, string);
+    callback inline_port_bool_changed(string, string, bool);
+    callback node_resized(string, float, float);
+    callback node_resize_finished(string, float, float);
 
     in-out property <bool> dragging: false;
     in-out property <string> drag_from_node_id: "";
@@ -478,10 +561,12 @@ component GraphCanvas inherits Rectangle {
         label: node.label;
         x_pos: node.x;
         y_pos: node.y;
+        node_width: node.width;
+        node_height: node.height;
         input_ports: node.input_ports;
         output_ports: node.output_ports;
         grid_size: root.grid_size;
-        node_width_cells: 8;
+        node_width_cells: 10;
         header_rows: 2;
         min_rows: 3;
         is_selected: node.is_selected;
@@ -500,6 +585,22 @@ component GraphCanvas inherits Rectangle {
         
         node_clicked(node_id) => {
             root.node_clicked(node_id);
+        }
+
+        inline_port_text_changed(node_id, port_name, value) => {
+            root.inline_port_text_changed(node_id, port_name, value);
+        }
+
+        inline_port_bool_changed(node_id, port_name, value) => {
+            root.inline_port_bool_changed(node_id, port_name, value);
+        }
+
+        node_resized(width, height) => {
+            root.node_resized(node.id, width, height);
+        }
+
+        node_resize_finished(width, height) => {
+            root.node_resize_finished(node.id, width, height);
         }
     }
 }
@@ -773,6 +874,10 @@ export component NodeGraphWindow inherits Window {
     callback box_selection_start(float, float);
     callback box_selection_update(float, float);
     callback box_selection_end();
+    callback inline_port_text_changed(string, string, string);
+    callback inline_port_bool_changed(string, string, bool);
+    callback node_resized(string, float, float);
+    callback node_resize_finished(string, float, float);
 
     title: "Zihuan Node Graph Viewer";
     width: 1200px;
@@ -848,6 +953,22 @@ export component NodeGraphWindow inherits Window {
             
             box_selection_end() => {
                 root.box_selection_end();
+            }
+
+            inline_port_text_changed(node_id, port_name, value) => {
+                root.inline_port_text_changed(node_id, port_name, value);
+            }
+
+            inline_port_bool_changed(node_id, port_name, value) => {
+                root.inline_port_bool_changed(node_id, port_name, value);
+            }
+
+            node_resized(node_id, width, height) => {
+                root.node_resized(node_id, width, height);
+            }
+
+            node_resize_finished(node_id, width, height) => {
+                root.node_resize_finished(node_id, width, height);
             }
         }
 
