@@ -98,6 +98,29 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
     let graph_state_clone = Rc::clone(&graph_state);
     let current_file_clone = Rc::clone(&current_file);
     let selection_state_clone = Rc::clone(&selection_state);
+    ui.on_save_json(move || {
+        if let Some(path) = rfd::FileDialog::new()
+            .add_filter("Node Graph", &["json"])
+            .set_file_name("node_graph.json")
+            .save_file()
+        {
+            let graph = graph_state_clone.borrow();
+            if let Err(e) = crate::node::graph_io::save_graph_definition_to_json(&path, &graph) {
+                eprintln!("Failed to save graph: {}", e);
+            } else {
+                let label = path.display().to_string();
+                *current_file_clone.borrow_mut() = label.clone();
+                if let Some(ui) = ui_handle.upgrade() {
+                    apply_graph_to_ui(&ui, &graph, Some(label), &selection_state_clone.borrow());
+                }
+            }
+        }
+    });
+
+    let ui_handle = ui.as_weak();
+    let graph_state_clone = Rc::clone(&graph_state);
+    let current_file_clone = Rc::clone(&current_file);
+    let selection_state_clone = Rc::clone(&selection_state);
     ui.on_add_node(move |type_id: SharedString| {
         let type_id_str = type_id.as_str();
         let mut graph = graph_state_clone.borrow_mut();

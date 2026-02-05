@@ -740,6 +740,7 @@ export component NodeGraphWindow inherits Window {
     in property <float> box_selection_height: 0;
 
     callback open_json();
+    callback save_json();
     callback add_node(string);
     callback show_node_type_menu();
     callback hide_node_type_menu();
@@ -841,6 +842,11 @@ export component NodeGraphWindow inherits Window {
             CjkButton {
                 text: "读取节点图文件";
                 clicked => { root.open_json(); }
+            }
+
+            CjkButton {
+                text: "保存节点图文件";
+                clicked => { root.save_json(); }
             }
 
             CjkButton {

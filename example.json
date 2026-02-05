@@ -1,0 +1,97 @@
+{
+  "nodes": [
+    {
+      "id": "node_1",
+      "name": "QQ机器人适配器",
+      "description": "QQ Bot Adapter - receives messages from QQ server",
+      "node_type": "bot_adapter",
+      "input_ports": [
+        {
+          "name": "trigger",
+          "data_type": "Boolean",
+          "description": "Trigger to start receiving messages",
+          "required": true
+        },
+        {
+          "name": "qq_id",
+          "data_type": "String",
+          "description": "QQ ID to login",
+          "required": false
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "message",
+          "data_type": "MessageEvent",
+          "description": "Raw message event from QQ server",
+          "required": true
+        },
+        {
+          "name": "message_event",
+          "data_type": "MessageEvent",
+          "description": "Raw message event from QQ server",
+          "required": true
+        },
+        {
+          "name": "bot_adapter",
+          "data_type": "BotAdapterRef",
+          "description": "Shared bot adapter handle (self reference)",
+          "required": true
+        },
+        {
+          "name": "message_type",
+          "data_type": "String",
+          "description": "Type of the message",
+          "required": true
+        },
+        {
+          "name": "user_id",
+          "data_type": "String",
+          "description": "User ID who sent the message",
+          "required": true
+        },
+        {
+          "name": "content",
+          "data_type": "String",
+          "description": "Message content",
+          "required": true
+        }
+      ],
+      "position": null
+    },
+    {
+      "id": "node_2",
+      "name": "消息转字符串",
+      "description": "Converts MessageEvent to LLM prompt string",
+      "node_type": "message_event_to_string",
+      "input_ports": [
+        {
+          "name": "message_event",
+          "data_type": "MessageEvent",
+          "description": "MessageEvent containing message data",
+          "required": true
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "prompt",
+          "data_type": "String",
+          "description": "Formatted LLM prompt string",
+          "required": true
+        }
+      ],
+      "position": {
+        "x": 320.0,
+        "y": 100.0
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from_node_id": "node_1",
+      "from_port": "message_event",
+      "to_node_id": "node_2",
+      "to_port": "message_event"
+    }
+  ]
+}
