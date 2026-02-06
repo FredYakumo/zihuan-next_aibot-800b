@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
@@ -24,6 +25,10 @@ pub struct NodeDefinition {
     pub output_ports: Vec<Port>,
     pub position: Option<GraphPosition>,
     pub size: Option<GraphSize>,
+    #[serde(default)]
+    pub inline_values: HashMap<String, Value>,
+    #[serde(default)]
+    pub has_error: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -124,6 +129,8 @@ fn node_to_definition(id: &str, node: &dyn Node) -> NodeDefinition {
         output_ports: node.output_ports(),
         position: None,
         size: None,
+        inline_values: HashMap::new(),
+        has_error: false,
     }
 }
 

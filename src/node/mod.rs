@@ -6,6 +6,36 @@ pub enum NodeType {
     EventProducer,
 }
 
+
+#[derive(Debug, Clone)]
+pub struct ExecutionResult {
+    pub node_results: HashMap<String, HashMap<String, DataValue>>,
+    pub error_node_id: Option<String>,
+    pub error_message: Option<String>,
+}
+
+impl ExecutionResult {
+    pub fn success(node_results: HashMap<String, HashMap<String, DataValue>>) -> Self {
+        Self {
+            node_results,
+            error_node_id: None,
+            error_message: None,
+        }
+    }
+
+    pub fn with_error(
+        node_results: HashMap<String, HashMap<String, DataValue>>,
+        error_node_id: String,
+        error_message: String,
+    ) -> Self {
+        Self {
+            node_results,
+            error_node_id: Some(error_node_id),
+            error_message: Some(error_message),
+        }
+    }
+}
+
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use crate::error::Result;
@@ -170,12 +200,14 @@ pub trait Node: Send + Sync {
 /// NodeGraph manages multiple nodes
 pub struct NodeGraph {
     pub nodes: HashMap<String, Box<dyn Node>>,
+    pub inline_values: HashMap<String, HashMap<String, DataValue>>,
 }
 
 impl NodeGraph {
     pub fn new() -> Self {
         Self {
             nodes: HashMap::new(),
+            inline_values: HashMap::new(),
         }
     }
 
@@ -223,10 +255,18 @@ impl NodeGraph {
                         }
                     }
                 } else if port.required {
-                    return Err(crate::error::Error::ValidationError(format!(
-                        "Required input port '{}' for node '{}' is not bound",
-                        port.name, node_id
-                    )));
+                    // Check if the port has an inline value
+                    let has_inline = self.inline_values
+                        .get(node_id)
+                        .map(|values| values.contains_key(&port.name))
+                        .unwrap_or(false);
+                    
+                    if !has_inline {
+                        return Err(crate::error::Error::ValidationError(format!(
+                            "Required input port '{}' for node '{}' is not bound",
+                            port.name, node_id
+                        )));
+                    }
                 }
             }
         }
@@ -283,7 +323,7 @@ impl NodeGraph {
                     ))
                 })?;
 
-                let inputs = Self::collect_inputs(node.as_ref(), &data_pool, &node_id)?;
+                let inputs = Self::collect_inputs(node.as_ref(), &data_pool, &node_id, self.inline_values.get(&node_id))?;
                 let outputs = node.execute(inputs)?;
                 for (key, value) in outputs {
                     if data_pool.contains_key(&key) {
@@ -333,7 +373,7 @@ impl NodeGraph {
                 ))
             })?;
 
-            let inputs = Self::collect_inputs(node.as_ref(), &base_data_pool, node_id)?;
+            let inputs = Self::collect_inputs(node.as_ref(), &base_data_pool, node_id, self.inline_values.get(node_id))?;
             let outputs = node.execute(inputs)?;
             for (key, value) in outputs {
                 if base_data_pool.contains_key(&key) {
@@ -372,8 +412,46 @@ impl NodeGraph {
     }
 
     /// Execute the graph and capture results for each node
-    pub fn execute_and_capture_results(&mut self) -> Result<HashMap<String, HashMap<String, DataValue>>> {
+    pub fn execute_and_capture_results(&mut self) -> ExecutionResult {
         let mut node_results: HashMap<String, HashMap<String, DataValue>> = HashMap::new();
+        
+        // Try to execute, if error occurs, return early with error info
+        match self.execute_and_capture_results_internal(&mut node_results) {
+            Ok(()) => ExecutionResult::success(node_results),
+            Err(e) => {
+                // Extract node ID from error if possible
+                let error_msg = e.to_string();
+                let error_node_id = self.extract_error_node_id(&error_msg);
+                ExecutionResult::with_error(
+                    node_results,
+                    error_node_id.unwrap_or_else(|| "unknown".to_string()),
+                    error_msg,
+                )
+            }
+        }
+    }
+
+    fn extract_error_node_id(&self, error_msg: &str) -> Option<String> {
+        // Try to find node ID in error message like "[NODE_ERROR:xxx]"
+        if let Some(start) = error_msg.find("[NODE_ERROR:") {
+            if let Some(end) = error_msg[start + 12..].find(']') {
+                return Some(error_msg[start + 12..start + 12 + end].to_string());
+            }
+        }
+
+        // Try to find node ID in error message like "Node 'xxx' ..."
+        if let Some(start) = error_msg.find("Node '") {
+            if let Some(end) = error_msg[start + 6..].find('\'') {
+                return Some(error_msg[start + 6..start + 6 + end].to_string());
+            }
+        }
+        None
+    }
+
+    fn execute_and_capture_results_internal(
+        &mut self,
+        node_results: &mut HashMap<String, HashMap<String, DataValue>>,
+    ) -> Result<()> {
         
         let mut output_producers: HashMap<String, String> = HashMap::new();
         for (node_id, node) in &self.nodes {
@@ -406,10 +484,18 @@ impl NodeGraph {
                         }
                     }
                 } else if port.required {
-                    return Err(crate::error::Error::ValidationError(format!(
-                        "Required input port '{}' for node '{}' is not bound",
-                        port.name, node_id
-                    )));
+                    // Check if the port has an inline value
+                    let has_inline = self.inline_values
+                        .get(node_id)
+                        .map(|values| values.contains_key(&port.name))
+                        .unwrap_or(false);
+                    
+                    if !has_inline {
+                        return Err(crate::error::Error::ValidationError(format!(
+                            "Required input port '{}' for node '{}' is not bound",
+                            port.name, node_id
+                        )));
+                    }
                 }
             }
         }
@@ -466,7 +552,7 @@ impl NodeGraph {
                     ))
                 })?;
 
-                let inputs = Self::collect_inputs(node.as_ref(), &data_pool, &node_id)?;
+                let inputs = Self::collect_inputs(node.as_ref(), &data_pool, &node_id, self.inline_values.get(&node_id))?;
                 let outputs = node.execute(inputs.clone())?;
                 
                 // Store both inputs and outputs for this node
@@ -485,23 +571,26 @@ impl NodeGraph {
                 }
             }
 
-            return Ok(node_results);
+            return Ok(());
         }
 
         // For event producers, we still need to execute but won't capture all results
         self.execute()?;
         
-        Ok(node_results)
+        Ok(())
     }
 
     fn collect_inputs(
         node: &dyn Node,
         data_pool: &HashMap<String, DataValue>,
         node_id: &str,
+        inline_values: Option<&HashMap<String, DataValue>>,
     ) -> Result<HashMap<String, DataValue>> {
         let mut inputs: HashMap<String, DataValue> = HashMap::new();
         for port in node.input_ports() {
             if let Some(value) = data_pool.get(&port.name) {
+                inputs.insert(port.name.clone(), value.clone());
+            } else if let Some(value) = inline_values.and_then(|m| m.get(&port.name)) {
                 inputs.insert(port.name.clone(), value.clone());
             } else if port.required {
                 return Err(crate::error::Error::ValidationError(format!(
@@ -535,8 +624,10 @@ impl NodeGraph {
                 ))
             })?;
 
-            let inputs = Self::collect_inputs(node.as_ref(), base_data_pool, node_id)?;
-            node.on_start(inputs)?;
+            let inputs = Self::collect_inputs(node.as_ref(), base_data_pool, node_id, self.inline_values.get(node_id))?;
+            node.on_start(inputs).map_err(|e| {
+                crate::error::Error::ValidationError(format!("[NODE_ERROR:{}] {}", node_id, e))
+            })?;
         }
 
         loop {
@@ -548,7 +639,9 @@ impl NodeGraph {
                     ))
                 })?;
 
-                match node.on_update()? {
+                match node.on_update().map_err(|e| {
+                    crate::error::Error::ValidationError(format!("[NODE_ERROR:{}] {}", node_id, e))
+                })? {
                     Some(outputs) => {
                         node.validate_outputs(&outputs)?;
                         outputs
@@ -595,8 +688,10 @@ impl NodeGraph {
                     ))
                 })?;
 
-                let inputs = Self::collect_inputs(node.as_ref(), &event_pool, ordered_id)?;
-                let outputs = node.execute(inputs)?;
+                let inputs = Self::collect_inputs(node.as_ref(), &event_pool, ordered_id, self.inline_values.get(ordered_id))?;
+                let outputs = node.execute(inputs).map_err(|e| {
+                    crate::error::Error::ValidationError(format!("[NODE_ERROR:{}] {}", ordered_id, e))
+                })?;
                 for (key, value) in outputs {
                     if event_pool.contains_key(&key) {
                         return Err(crate::error::Error::ValidationError(format!(

@@ -6,6 +6,7 @@ export struct PortVm {
     is_input: bool,
     is_connected: bool,
     is_required: bool,
+    has_value: bool,
     data_type: string,
     inline_text: string,
     inline_bool: bool,
@@ -24,6 +25,7 @@ export struct NodeVm {
     input_ports: [PortVm],
     output_ports: [PortVm],
     is_selected: bool,
+    has_error: bool,
 }
 
 export struct EdgeVm {
@@ -170,6 +172,7 @@ component NodeItem inherits Rectangle {
     in property <float> header_rows;
     in property <float> min_rows;
     in property <bool> is_selected;
+    in property <bool> has_error;
     
     callback node_moved(float, float);
     callback node_move_finished(float, float);
@@ -203,8 +206,8 @@ component NodeItem inherits Rectangle {
     ) * 1px;
     background: touch.pressed ? AppTheme.node-bg-pressed : AppTheme.node-bg;
     border-radius: 8px;
-    border-width: is_selected ? 2px : 1px;
-    border-color: is_selected ? AppTheme.selection : AppTheme.border;
+    border-width: has_error ? 2px : (is_selected ? 2px : 1px);
+    border-color: has_error ? AppTheme.danger : (is_selected ? AppTheme.selection : AppTheme.border);
 
     touch := TouchArea {
         clicked => {
@@ -275,9 +278,9 @@ component NodeItem inherits Rectangle {
         width: (grid_size * 0.6) * 1px;
         height: (grid_size * 0.6) * 1px;
         border-radius: (grid_size * 0.3) * 1px;
-        background: port.is_connected ? AppTheme.primary-muted : (port.is_required ? AppTheme.danger-bg : AppTheme.node-port-bg);
+        background: (port.is_connected || port.has_value) ? AppTheme.primary-muted : (port.is_required ? AppTheme.danger-bg : AppTheme.node-port-bg);
         border-width: 1px;
-        border-color: port.is_connected ? AppTheme.primary : (port.is_required ? AppTheme.danger : AppTheme.node-port-border);
+        border-color: (port.is_connected || port.has_value) ? AppTheme.primary : (port.is_required ? AppTheme.danger : AppTheme.node-port-border);
 
         TouchArea {
             pointer-event(event) => {
@@ -661,6 +664,7 @@ component GraphCanvas inherits Rectangle {
         header_rows: 2;
         min_rows: 3;
         is_selected: node.is_selected;
+        has_error: node.has_error;
         
         node_moved(x, y) => {
             root.node_moved(node.id, x, y);

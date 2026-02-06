@@ -1,5 +1,5 @@
-use log::info;
-use slint::{ModelRc, VecModel, SharedString, ComponentHandle};
+use log::{error, info};
+use slint::{ModelRc, VecModel, SharedString, ComponentHandle, Model};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::path::Path;
@@ -11,7 +11,6 @@ use crate::node::graph_io::{
     load_graph_definition_from_json,
     NodeGraphDefinition,
 };
-use crate::node::{Port, DataValue};
 use crate::node::registry::NODE_REGISTRY;
 
 use crate::ui::graph_window::{
@@ -45,6 +44,23 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
     let graph_state = Rc::new(RefCell::new(initial_graph.unwrap_or_default()));
     let selection_state = Rc::new(RefCell::new(crate::ui::selection::SelectionState::default()));
     let inline_inputs = Rc::new(RefCell::new(HashMap::<String, InlinePortValue>::new()));
+
+    // Populate inline_inputs from graph
+    {
+        let graph = graph_state.borrow();
+        let mut map = inline_inputs.borrow_mut();
+        for node in &graph.nodes {
+            for (port_name, val) in &node.inline_values {
+                let key = inline_port_key(&node.id, port_name);
+                match val {
+                     serde_json::Value::String(s) => { map.insert(key, InlinePortValue::Text(s.clone())); }
+                     serde_json::Value::Bool(b) => { map.insert(key, InlinePortValue::Bool(*b)); }
+                     serde_json::Value::Number(n) => { map.insert(key, InlinePortValue::Text(n.to_string())); }
+                     _ => {}
+                }
+            }
+        }
+    }
 
     let current_file = Rc::new(RefCell::new(
         if graph_state.borrow().nodes.is_empty() && graph_state.borrow().edges.is_empty() {
@@ -100,6 +116,23 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
         {
             if let Ok(graph) = load_graph_definition_from_json(&path) {
                 if let Some(ui) = ui_handle.upgrade() {
+                    // Populate inline_inputs from new graph
+                    {
+                        let mut map = inline_inputs_clone.borrow_mut();
+                        map.clear();
+                        for node in &graph.nodes {
+                            for (port_name, val) in &node.inline_values {
+                                let key = inline_port_key(&node.id, port_name);
+                                match val {
+                                     serde_json::Value::String(s) => { map.insert(key, InlinePortValue::Text(s.clone())); }
+                                     serde_json::Value::Bool(b) => { map.insert(key, InlinePortValue::Bool(*b)); }
+                                     serde_json::Value::Number(n) => { map.insert(key, InlinePortValue::Text(n.to_string())); }
+                                     _ => {}
+                                }
+                            }
+                        }
+                    }
+
                     *graph_state_clone.borrow_mut() = graph;
                     let label = path.display().to_string();
                     *current_file_clone.borrow_mut() = label.clone();
@@ -126,7 +159,26 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
             .set_file_name("node_graph.json")
             .save_file()
         {
-            let graph = graph_state_clone.borrow();
+            let mut graph = graph_state_clone.borrow_mut();
+            let inline_inputs_map = inline_inputs_clone.borrow();
+            
+            // Populate inline_values from inline_inputs map to graph definition
+            for node in &mut graph.nodes {
+                for port in &node.input_ports {
+                    let key = inline_port_key(&node.id, &port.name);
+                    if let Some(val) = inline_inputs_map.get(&key) {
+                        match val {
+                            InlinePortValue::Text(s) => {
+                                 node.inline_values.insert(port.name.clone(), serde_json::Value::String(s.clone()));
+                            },
+                            InlinePortValue::Bool(b) => {
+                                 node.inline_values.insert(port.name.clone(), serde_json::Value::Bool(*b));
+                            },
+                        }
+                    }
+                }
+            }
+
             if let Err(e) = crate::node::graph_io::save_graph_definition_to_json(&path, &graph) {
                 eprintln!("Failed to save graph: {}", e);
             } else {
@@ -138,7 +190,7 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
                         &graph,
                         Some(label),
                         &selection_state_clone.borrow(),
-                        &inline_inputs_clone.borrow(),
+                        &inline_inputs_map,
                     );
                 }
             }
@@ -194,41 +246,83 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
                 }
             }
         }
+
+        // Populate inline_values from inline_inputs map to graph definition
+        for node in &mut graph_def.nodes {
+            for port in &node.input_ports {
+                let key = inline_port_key(&node.id, &port.name);
+                if let Some(val) = inline_inputs_map.get(&key) {
+                    match val {
+                        InlinePortValue::Text(s) => {
+                             node.inline_values.insert(port.name.clone(), serde_json::Value::String(s.clone()));
+                        },
+                        InlinePortValue::Bool(b) => {
+                             node.inline_values.insert(port.name.clone(), serde_json::Value::Bool(*b));
+                        },
+                    }
+                }
+            }
+        }
         
         // Build node graph from definition and execute
         match crate::node::registry::build_node_graph_from_definition(&graph_def) {
             Ok(mut node_graph) => {
                 info!("开始执行节点图...");
                 
-                match node_graph.execute_and_capture_results() {
-                    Ok(results) => {
-                        info!("节点图执行成功!");
-                        // Store execution results
-                        graph_def.execution_results = results;
-                        
-                        if let Some(ui) = ui_handle.upgrade() {
-                            ui.set_connection_status("✓ 节点图执行成功".into());
-                            // Refresh UI to show execution results
-                            let label = current_file_clone.borrow().clone();
-                            apply_graph_to_ui(
-                                &ui,
-                                &graph_def,
-                                Some(label),
-                                &selection_state_clone.borrow(),
-                                &inline_inputs_map,
-                            );
-                        }
+                let execution_result = node_graph.execute_and_capture_results();
+                
+                // Store execution results
+                graph_def.execution_results = execution_result.node_results;
+                
+                if let (Some(error_node_id), Some(error_msg)) = 
+                    (execution_result.error_node_id.clone(), execution_result.error_message.clone()) {
+                    // Execution failed
+                    error!("节点图执行失败: {}", error_msg);
+                    
+                    // Mark the error node in graph_def
+                    if let Some(node) = graph_def.nodes.iter_mut().find(|n| n.id == error_node_id) {
+                        node.has_error = true;
                     }
-                    Err(e) => {
-                        eprintln!("节点图执行失败: {}", e);
-                        if let Some(ui) = ui_handle.upgrade() {
-                            ui.invoke_show_error(format!("执行错误：{}", e).into());
-                        }
+                    
+                    if let Some(ui) = ui_handle.upgrade() {
+                        // Refresh UI to show error node with red border
+                        let label = current_file_clone.borrow().clone();
+                        apply_graph_to_ui(
+                            &ui,
+                            &graph_def,
+                            Some(label),
+                            &selection_state_clone.borrow(),
+                            &inline_inputs_map,
+                        );
+                        
+                        // Show error dialog
+                        ui.invoke_show_error(format!("执行错误：{}", error_msg).into());
+                    }
+                } else {
+                    // Execution succeeded
+                    info!("节点图执行成功!");
+                    
+                    // Clear error flags from all nodes on success
+                    for node in &mut graph_def.nodes {
+                        node.has_error = false;
+                    }
+                    
+                    if let Some(ui) = ui_handle.upgrade() {
+                        ui.set_connection_status("✓ 节点图执行成功".into());
+                        // Refresh UI to show execution results
+                        let label = current_file_clone.borrow().clone();
+                        apply_graph_to_ui(
+                            &ui,
+                            &graph_def,
+                            Some(label),
+                            &selection_state_clone.borrow(),
+                            &inline_inputs_map,
+                        );
                     }
                 }
             }
             Err(e) => {
-                eprintln!("构建节点图失败: {}", e);
+                error!("构建节点图失败: {}", e);
                 if let Some(ui) = ui_handle.upgrade() {
                     ui.invoke_show_error(format!("构建节点图失败：{}", e).into());
                 }
@@ -714,15 +808,16 @@ fn apply_graph_to_ui(
                     let is_connected = graph.edges.iter().any(|e| {
                         e.to_node_id == node.id && e.to_port == p.name
                     });
+                    
                     let key = inline_port_key(&node.id, &p.name);
-                    let (inline_text, inline_bool) = match &p.data_type {
+                    let (inline_text, inline_bool, has_inline) = match &p.data_type {
                         crate::node::DataType::Boolean => {
                             let value = match inline_inputs.get(&key) {
                                 Some(InlinePortValue::Bool(v)) => *v,
                                 Some(InlinePortValue::Text(v)) => v.eq_ignore_ascii_case("true"),
                                 None => false,
                             };
-                            (String::new(), value)
+                            (String::new(), value, true) // Boolean inputs always have a value (default false)
                         }
                         crate::node::DataType::String
                         | crate::node::DataType::Integer
@@ -732,15 +827,17 @@ fn apply_graph_to_ui(
                                 Some(InlinePortValue::Bool(v)) => v.to_string(),
                                 None => String::new(),
                             };
-                            (value, false)
+                            let has_val = !value.is_empty();
+                            (value, false, has_val)
                         }
-                        _ => (String::new(), false),
+                        _ => (String::new(), false, false),
                     };
                     PortVm {
                         name: p.name.clone().into(),
                         is_input: true,
                         is_connected,
                         is_required: p.required,
+                        has_value: has_inline,
                         data_type: p.data_type.to_string().into(),
                         inline_text: inline_text.into(),
                         inline_bool,
@@ -760,6 +857,7 @@ fn apply_graph_to_ui(
                         is_input: false,
                         is_connected,
                         is_required: false,
+                        has_value: false,
                         data_type: p.data_type.to_string().into(),
                         inline_text: "".into(),
                         inline_bool: false,
@@ -791,6 +889,7 @@ fn apply_graph_to_ui(
                 input_ports: ModelRc::new(VecModel::from(input_ports)),
                 output_ports: ModelRc::new(VecModel::from(output_ports)),
                 is_selected,
+                has_error: node.has_error,
             }
         })
         .collect();
@@ -834,6 +933,8 @@ fn add_node_to_graph(graph: &mut NodeGraphDefinition, type_id: &str) -> Result<(
         output_ports: dummy_node.output_ports(),
         position: None,
         size: None,
+        inline_values: HashMap::new(),
+        has_error: false,
     });
     
     Ok(())

@@ -1,7 +1,8 @@
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use once_cell::sync::Lazy;
-use crate::node::Node;
+use serde_json::Value;
+use crate::node::{Node, DataValue, DataType};
 use crate::error::Result;
 
 /// Node factory function type
@@ -266,8 +267,55 @@ pub fn build_node_graph_from_definition(
             node_def.id.clone(),
             node_def.name.clone(),
         )?;
+
+        // Parse inline values
+        if !node_def.inline_values.is_empty() {
+            let mut values = HashMap::new();
+            let ports: HashMap<String, DataType> = node.input_ports()
+                .into_iter()
+                .map(|p| (p.name, p.data_type))
+                .collect();
+            
+            for (port_name, json_val) in &node_def.inline_values {
+                if let Some(data_type) = ports.get(port_name) {
+                    if let Some(val) = json_to_data_value(json_val, data_type) {
+                        values.insert(port_name.clone(), val);
+                    }
+                }
+            }
+            if !values.is_empty() {
+                graph.inline_values.insert(node_def.id.clone(), values);
+            }
+        }
+
         graph.add_node(node)?;
     }
 
     Ok(graph)
+}
+
+fn json_to_data_value(json: &Value, target_type: &DataType) -> Option<DataValue> {
+    match (json, target_type) {
+        (Value::String(s), DataType::String) => Some(DataValue::String(s.clone())),
+        (Value::String(s), DataType::Boolean) => {
+             if s == "true" { Some(DataValue::Boolean(true)) }
+             else if s == "false" { Some(DataValue::Boolean(false)) }
+             else { None }
+        },
+        (Value::String(s), DataType::Integer) => s.parse().ok().map(DataValue::Integer),
+        (Value::String(s), DataType::Float) => s.parse().ok().map(DataValue::Float),
+        (Value::String(s), DataType::Json) => match serde_json::from_str(s) {
+            Ok(v) => Some(DataValue::Json(v)),
+            Err(_) => Some(DataValue::String(s.clone())), // Fallback? or Error? Or maybe just create Json string
+        },
+        
+        (Value::Number(n), DataType::Integer) => n.as_i64().map(DataValue::Integer),
+        (Value::Number(n), DataType::Float) => n.as_f64().map(DataValue::Float),
+        
+        (Value::Bool(b), DataType::Boolean) => Some(DataValue::Boolean(*b)),
+        
+        (v, DataType::Json) => Some(DataValue::Json(v.clone())),
+        
+        _ => None,
+    }
 }

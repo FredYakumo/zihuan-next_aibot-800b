@@ -9,11 +9,13 @@ use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::block_in_place;
 use tokio::sync::Mutex as TokioMutex;
+use tokio::select;
 
 pub struct BotAdapterNode {
     id: String,
     name: String,
     event_rx: Option<TokioMutex<mpsc::UnboundedReceiver<MessageEvent>>>,
+    error_rx: Option<TokioMutex<mpsc::UnboundedReceiver<String>>>,
     adapter_handle: Option<SharedBotAdapter>,
 }
 
@@ -23,6 +25,7 @@ impl BotAdapterNode {
             id: id.into(),
             name: name.into(),
             event_rx: None,
+            error_rx: None,
             adapter_handle: None,
         }
     }
@@ -115,6 +118,7 @@ impl Node for BotAdapterNode {
 
         let (event_tx, event_rx) = mpsc::unbounded_channel::<MessageEvent>();
         let (adapter_tx, adapter_rx) = oneshot::channel();
+        let (error_tx, error_rx) = mpsc::unbounded_channel::<String>();
         let handler: event::EventHandler = Arc::new(move |event| {
             let event_tx = event_tx.clone();
             Box::pin(async move {
@@ -130,6 +134,7 @@ impl Node for BotAdapterNode {
             info!("Bot adapter initialized, connecting to server...");
             if let Err(e) = BotAdapter::start(adapter).await {
                 error!("Bot adapter error: {}", e);
+                let _ = error_tx.send(format!("Bot adapter connection error: {}", e));
             }
         };
 
@@ -148,6 +153,7 @@ impl Node for BotAdapterNode {
 
         self.adapter_handle = Some(adapter_handle);
         self.event_rx = Some(TokioMutex::new(event_rx));
+        self.error_rx = Some(TokioMutex::new(error_rx));
 
         Ok(())
     }
@@ -156,21 +162,64 @@ impl Node for BotAdapterNode {
         let event_rx = self.event_rx.as_ref().ok_or_else(|| {
             crate::error::Error::ValidationError("Bot adapter is not initialized".to_string())
         })?;
+        let error_rx = self.error_rx.as_ref();
 
-        let received_event = if let Ok(handle) = tokio::runtime::Handle::try_current() {
-            block_in_place(|| handle.block_on(async {
-                let mut guard = event_rx.lock().await;
-                guard.recv().await
-            }))
+        let result = if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            block_in_place(|| {
+                handle.block_on(async {
+                    if let Some(error_rx) = error_rx {
+                        select! {
+                            error_msg = async {
+                                let mut guard = error_rx.lock().await;
+                                guard.recv().await
+                            } => {
+                                if let Some(msg) = error_msg {
+                                    return Err(crate::error::Error::ValidationError(msg));
+                                }
+                                Ok(None)
+                            }
+                            event = async {
+                                let mut guard = event_rx.lock().await;
+                                guard.recv().await
+                            } => {
+                                Ok(event)
+                            }
+                        }
+                    } else {
+                        let mut guard = event_rx.lock().await;
+                        Ok(guard.recv().await)
+                    }
+                })
+            })
         } else {
             let runtime = tokio::runtime::Runtime::new()?;
             runtime.block_on(async {
-                let mut guard = event_rx.lock().await;
-                guard.recv().await
+                if let Some(error_rx) = error_rx {
+                    select! {
+                        error_msg = async {
+                            let mut guard = error_rx.lock().await;
+                            guard.recv().await
+                        } => {
+                            if let Some(msg) = error_msg {
+                                return Err(crate::error::Error::ValidationError(msg));
+                            }
+                            Ok(None)
+                        }
+                        event = async {
+                            let mut guard = event_rx.lock().await;
+                            guard.recv().await
+                        } => {
+                            Ok(event)
+                        }
+                    }
+                } else {
+                    let mut guard = event_rx.lock().await;
+                    Ok(guard.recv().await)
+                }
             })
         };
 
-        let event = match received_event {
+        let event = match result? {
             Some(event) => event,
             None => return Ok(None),
         };
@@ -184,6 +233,7 @@ impl Node for BotAdapterNode {
 
     fn on_cleanup(&mut self) -> Result<()> {
         self.event_rx = None;
+        self.error_rx = None;
         self.adapter_handle = None;
         Ok(())
     }

@@ -145,7 +145,7 @@ impl Node for MessageCacheNode {
         });
 
         // Cache the message in memory (in real implementation, would also use Redis if provided)
-        let message_key = message_event.message_id.to_string();
+        let _message_key = message_event.message_id.to_string();
         let _message_json = serde_json::json!({
             "message_id": message_event.message_id,
             "message_type": message_event.message_type.as_str(),
