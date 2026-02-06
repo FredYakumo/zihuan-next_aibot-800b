@@ -4,10 +4,8 @@ use tokio_tungstenite::{connect_async, tungstenite::Message as WsMessage};
 
 use super::event;
 use super::models::{MessageEvent, MessageType, Profile, RawMessageEvent};
-use crate::util::message_store::MessageStore;
 use crate::util::url_utils::extract_host;
 use crate::error::Result;
-use std::env;
 use std::sync::Arc;
 use tokio::sync::Mutex as TokioMutex;
 
@@ -31,12 +29,6 @@ impl Clone for AgentBox {
 pub struct BotAdapterConfig {
     pub url: String,
     pub token: String,
-    pub redis_url: Option<String>,
-    pub database_url: Option<String>,
-    pub redis_reconnect_max_attempts: Option<u32>,
-    pub redis_reconnect_interval_secs: Option<u64>,
-    pub mysql_reconnect_max_attempts: Option<u32>,
-    pub mysql_reconnect_interval_secs: Option<u64>,
     pub qq_id: String,
     pub brain_agent: Option<AgentBox>,
 }
@@ -50,37 +42,9 @@ impl BotAdapterConfig {
         Self {
             url: url.into(),
             token: token.into(),
-            redis_url: None,
-            database_url: None,
-            redis_reconnect_max_attempts: None,
-            redis_reconnect_interval_secs: None,
-            mysql_reconnect_max_attempts: None,
-            mysql_reconnect_interval_secs: None,
             qq_id: qq_id.into(),
             brain_agent: None,
         }
-    }
-
-    pub fn with_redis_url(mut self, url: Option<String>) -> Self {
-        self.redis_url = url;
-        self
-    }
-
-    pub fn with_database_url(mut self, url: Option<String>) -> Self {
-        self.database_url = url;
-        self
-    }
-
-    pub fn with_redis_reconnect(mut self, max_attempts: Option<u32>, interval_secs: Option<u64>) -> Self {
-        self.redis_reconnect_max_attempts = max_attempts;
-        self.redis_reconnect_interval_secs = interval_secs;
-        self
-    }
-
-    pub fn with_mysql_reconnect(mut self, max_attempts: Option<u32>, interval_secs: Option<u64>) -> Self {
-        self.mysql_reconnect_max_attempts = max_attempts;
-        self.mysql_reconnect_interval_secs = interval_secs;
-        self
     }
 
     pub fn with_brain_agent(mut self, agent: Option<AgentBox>) -> Self {
@@ -93,7 +57,6 @@ impl BotAdapterConfig {
 pub struct BotAdapter {
     url: String,
     token: String,
-    message_store: Arc<TokioMutex<MessageStore>>,
     bot_profile: Option<Profile>,
     brain_agent: Option<AgentBox>,
     event_handlers: Vec<event::EventHandler>,
@@ -104,41 +67,9 @@ pub type SharedBotAdapter = Arc<TokioMutex<BotAdapter>>;
 
 impl BotAdapter {
     pub async fn new(config: BotAdapterConfig) -> Self {
-        // Use provided redis_url, fallback to env var
-        let redis_url = config.redis_url.or_else(|| env::var("REDIS_URL").ok());
-
-        // Use provided database_url, fallback to env var
-        let database_url = if config.database_url.is_some() {
-            config.database_url
-        } else {
-            env::var("DATABASE_URL").ok()
-        };
-
-        let message_store = Arc::new(TokioMutex::new(
-            MessageStore::new(
-                redis_url.as_deref(),
-                database_url.as_deref(),
-                config.redis_reconnect_max_attempts,
-                config.redis_reconnect_interval_secs,
-                config.mysql_reconnect_max_attempts,
-                config.mysql_reconnect_interval_secs,
-            )
-            .await,
-        ));
-        
-        // Load recent messages from MySQL into Redis/memory cache on startup
-        {
-            let store = message_store.lock().await;
-            match store.load_messages_from_mysql(1000).await {
-                Ok(count) => info!("[BotAdapter] Loaded {} messages from MySQL into cache on startup", count),
-                Err(e) => warn!("[BotAdapter] Failed to load messages from MySQL: {}", e),
-            }
-        }
-
         Self {
             url: config.url,
             token: config.token,
-            message_store,
             bot_profile: Some(Profile {
                 qq_id: config.qq_id,
                 ..Default::default()
@@ -163,10 +94,6 @@ impl BotAdapter {
 
     pub fn get_bot_profile(&self) -> Option<&Profile> {
         self.bot_profile.as_ref()
-    }
-
-    pub fn get_message_store(&self) -> Arc<TokioMutex<MessageStore>> {
-        self.message_store.clone()
     }
 
     pub fn get_brain_agent(&self) -> Option<&AgentBox> {
@@ -285,24 +212,10 @@ impl BotAdapter {
             is_group_message: matches!(raw_event.message_type, MessageType::Group),
         };
 
-        // Store the message in the message store (async spawn)
-        let store = {
-            let guard = adapter.lock().await;
-            guard.message_store.clone()
-        };
-        let msg_id = raw_event.message_id.to_string();
-        let msg_str = serde_json::to_string(&raw_event).unwrap_or_default();
-        let store_for_spawn = store.clone();
-        tokio::spawn(async move {
-            let store = store_for_spawn.lock().await;
-            store.store_message(&msg_id, &msg_str).await;
-        });
-
         // Dispatch to the unified message handler
-        let store = store.clone();
         let adapter_clone = adapter.clone();
         tokio::spawn(async move {
-            event::process_message(adapter_clone, event, store).await;
+            event::process_message(adapter_clone, event).await;
         });
     }
 }

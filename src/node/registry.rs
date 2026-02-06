@@ -125,6 +125,7 @@ pub fn init_node_registry() -> Result<()> {
     use crate::bot_adapter::node_impl::{BotAdapterNode, MessageSenderNode};
     use crate::bot_adapter::message_event_to_string::MessageEventToStringNode;
     use crate::node::database_nodes::{RedisNode, MySqlNode};
+    use crate::node::message_nodes::{MessageMySQLPersistenceNode, MessageCacheNode};
 
     // Utility nodes
     register_node!(
@@ -214,6 +215,23 @@ pub fn init_node_registry() -> Result<()> {
         "数据库",
         "构建MySQL连接配置",
         MySqlNode
+    );
+
+    // Message storage nodes
+    register_node!(
+        "message_mysql_persistence",
+        "消息MySQL持久化",
+        "消息存储",
+        "将消息事件持久化到MySQL数据库",
+        MessageMySQLPersistenceNode
+    );
+
+    register_node!(
+        "message_cache",
+        "消息缓存",
+        "消息存储",
+        "缓存消息事件到内存或Redis",
+        MessageCacheNode
     );
 
     Ok(())

@@ -15,6 +15,7 @@ pub mod util_nodes;
 pub mod graph_io;
 pub mod registry;
 pub mod database_nodes;
+pub mod message_nodes;
 
 #[allow(unused_imports)]
 pub use data_value::{DataType, DataValue};

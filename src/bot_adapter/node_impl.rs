@@ -58,12 +58,6 @@ impl Node for BotAdapterNode {
             Port::new("bot_server_token", DataType::String)
                 .with_description("Bot服务器连接令牌")
                 .optional(),
-            Port::new("redis_ref", DataType::RedisRef)
-                .with_description("Redis连接配置引用")
-                .optional(),
-            Port::new("mysql_ref", DataType::MySqlRef)
-                .with_description("MySQL连接配置引用")
-                .optional(),
         ]
     }
 
@@ -126,48 +120,16 @@ impl Node for BotAdapterNode {
             })
             .unwrap_or_else(|| std::env::var("BOT_SERVER_TOKEN").unwrap_or_default());
 
-        // Extract Redis config from RedisRef input port
-        let redis_config = inputs
-            .get("redis_ref")
-            .and_then(|value| match value {
-                DataValue::RedisRef(config) => Some(config.clone()),
-                _ => None,
-            });
-        let redis_url = redis_config.as_ref().and_then(|c| c.url.clone());
-        let redis_reconnect_max = redis_config.as_ref().and_then(|c| c.reconnect_max_attempts);
-        let redis_reconnect_interval = redis_config.as_ref().and_then(|c| c.reconnect_interval_secs);
-
-        // Extract MySQL config from MySqlRef input port
-        let mysql_config = inputs
-            .get("mysql_ref")
-            .and_then(|value| match value {
-                DataValue::MySqlRef(config) => Some(config.clone()),
-                _ => None,
-            });
-        let database_url = mysql_config.as_ref().and_then(|c| c.url.clone());
-        let mysql_reconnect_max = mysql_config.as_ref().and_then(|c| c.reconnect_max_attempts);
-        let mysql_reconnect_interval = mysql_config.as_ref().and_then(|c| c.reconnect_interval_secs);
-
         let adapter_config = BotAdapterConfig::new(
             bot_server_url,
             bot_server_token,
             qq_id,
         )
-        .with_redis_url(redis_url)
-        .with_database_url(database_url)
-        .with_redis_reconnect(
-            redis_reconnect_max,
-            redis_reconnect_interval,
-        )
-        .with_mysql_reconnect(
-            mysql_reconnect_max,
-            mysql_reconnect_interval,
-        )
         .with_brain_agent(None);
 
         let (event_tx, event_rx) = mpsc::unbounded_channel::<MessageEvent>();
         let (adapter_tx, adapter_rx) = oneshot::channel();
-        let handler: event::EventHandler = Arc::new(move |event, _store| {
+        let handler: event::EventHandler = Arc::new(move |event| {
             let event_tx = event_tx.clone();
             Box::pin(async move {
                 let _ = event_tx.send(event.clone());
