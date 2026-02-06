@@ -15,7 +15,7 @@ use config::load_config;
 
 
 lazy_static! {
-    static ref BASE_LOG: LogUtil = LogUtil::new_with_path("zihuan_next_aibot", "logs");
+    static ref BASE_LOG: LogUtil = LogUtil::new_with_path("zihuan_next", "logs");
 }
 
 

@@ -120,7 +120,7 @@ macro_rules! register_node {
 
 /// Initialize all node types in the registry
 pub fn init_node_registry() -> Result<()> {
-    use crate::node::util_nodes::{ConditionalNode, JsonParserNode};
+    use crate::node::util_nodes::{ConditionalNode, JsonParserNode, PreviewStringNode, StringDataNode};
     use crate::llm::node_impl::{LLMNode, AgentNode, TextProcessorNode};
     use crate::bot_adapter::node_impl::{BotAdapterNode, MessageSenderNode};
     use crate::bot_adapter::message_event_to_string::MessageEventToStringNode;
@@ -142,6 +142,22 @@ pub fn init_node_registry() -> Result<()> {
         "工具",
         "将JSON字符串解析为结构化数据",
         JsonParserNode
+    );
+
+    register_node!(
+        "preview_string",
+        "Preview String",
+        "工具",
+        "在节点卡片内预览输入字符串",
+        PreviewStringNode
+    );
+
+    register_node!(
+        "string_data",
+        "String Data",
+        "工具",
+        "字符串数据源，通过UI输入框提供字符串",
+        StringDataNode
     );
 
     // LLM nodes

@@ -14,6 +14,9 @@ export struct PortVm {
 export struct NodeVm {
     id: string,
     label: string,
+    preview_text: string,
+    node_type: string,
+    string_data_text: string,
     x: float,
     y: float,
     width: float,
@@ -153,6 +156,9 @@ component CjkRunButton inherits Rectangle {
 component NodeItem inherits Rectangle {
     in property <string> node_id;
     in property <string> label;
+    in property <string> preview_text;
+    in property <string> node_type;
+    in property <string> string_data_text;
     in property <float> x_pos;
     in property <float> y_pos;
     in-out property <float> node_width;
@@ -244,10 +250,23 @@ component NodeItem inherits Rectangle {
         horizontal-alignment: center;
         font-size: 14px;
         font-weight: 700;
-        height: (grid_size * header_rows) * 1px;
+        height: (grid_size * (root.preview_text == "" ? header_rows : 1)) * 1px;
         width: parent.width;
         x: 0px;
         y: 0px;
+    }
+
+    if root.preview_text != "": CjkText {
+        text: root.preview_text;
+        color: AppTheme.text-muted;
+        horizontal-alignment: left;
+        font-size: 11px;
+        height: (grid_size) * 1px;
+        width: parent.width - (grid_size) * 1px;
+        x: (grid_size * 0.5) * 1px;
+        y: (grid_size * 1.0) * 1px;
+        wrap: word-wrap;
+        overflow: elide;
     }
 
     for port[i] in input_ports: Rectangle {
@@ -304,6 +323,38 @@ component NodeItem inherits Rectangle {
                 checked: port.inline_bool;
                 toggled => {
                     root.inline_port_bool_changed(root.node_id, port.name, self.checked);
+                }
+            }
+        }
+    }
+
+    // Special UI for string_data nodes: input field without port circle
+    if root.node_type == "string_data": Rectangle {
+        x: (grid_size) * 1px;
+        y: (grid_size * header_rows) * 1px;
+        width: root.width - (grid_size * 2.5) * 1px;
+        height: (grid_size) * 1px;
+
+        HorizontalLayout {
+            alignment: start;
+            spacing: 5px;
+
+            CjkText {
+                text: "text";
+                color: AppTheme.text-secondary;
+                font-size: 10px;
+                vertical-alignment: center;
+                overflow: elide;
+                horizontal-stretch: 0;
+            }
+
+            LineEdit {
+                width: min(parent.width * 0.6, 150px);
+                height: (grid_size * 0.8) * 1px;
+                text: root.string_data_text;
+                placeholder-text: "输入字符串";
+                edited(text) => {
+                    root.inline_port_text_changed(root.node_id, "text", text);
                 }
             }
         }
@@ -596,6 +647,9 @@ component GraphCanvas inherits Rectangle {
     for node in nodes: NodeItem {
         node_id: node.id;
         label: node.label;
+        preview_text: node.preview_text;
+        node_type: node.node_type;
+        string_data_text: node.string_data_text;
         x_pos: node.x;
         y_pos: node.y;
         node_width: node.width;

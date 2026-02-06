@@ -67,7 +67,7 @@ cargo run  # In default mode (no args), starts bot adapter + WebSocket client
 - **Message store**: Always init early in `BotAdapter::new()` with both Redis and MySQL URLs. Redis for cache, MySQL for persistence, in-memory fallback logs warning. Get context with `MessageStore::get_message()` (Redis cache) or `MessageStore::get_message_record()` (MySQL) before LLM responses. Historical queries use `MessageStore::query_messages()` (MySQL).
 - **Deserialization**: Serde-based enums with lenient parsing—skips unsupported elements instead of failing entire event.
 - **Logging**: Logs to `./logs` via `LogUtil` (`log_util` crate). Prefix message store logs with `[MessageStore]`.
-- **UI state**: Window position/size auto-saves to platform-specific config dir (Linux/macOS: `~/.config/zihuan_next_aibot/`, Windows: `%APPDATA%/zihuan_next_aibot/window_config.json`).
+- **UI state**: Window position/size auto-saves to platform-specific config dir (Linux/macOS: `~/.config/zihuan_next/`, Windows: `%APPDATA%/zihuan_next/window_config.json`).
 
 ## Extending the bot
 - **New node type**: Implement `Node` trait (define `id()`, `name()`, `input_ports()`, `output_ports()`, `execute()`). For event sources, override `node_type() -> NodeType::EventProducer` and implement `on_start()/on_update()/on_cleanup()`. See `ConditionalNode` (util_nodes.rs) for minimal example, `MessageEventToStringNode` (bot_adapter/) for event handling.

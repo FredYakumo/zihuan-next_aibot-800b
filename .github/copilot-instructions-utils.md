@@ -88,7 +88,7 @@ use log_util::log_util::LogUtil;
 use lazy_static::lazy_static;
 
 lazy_static! {
-    static ref BASE_LOG: LogUtil = LogUtil::new_with_path("zihuan_next_aibot", "logs");
+    static ref BASE_LOG: LogUtil = LogUtil::new_with_path("zihuan_next", "logs");
 }
 
 #[tokio::main]

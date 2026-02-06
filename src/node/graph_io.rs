@@ -4,12 +4,14 @@ use std::fs;
 use std::path::Path;
 
 use crate::error::Result;
-use crate::node::{Node, NodeGraph, Port};
+use crate::node::{DataValue, Node, NodeGraph, Port};
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct NodeGraphDefinition {
     pub nodes: Vec<NodeDefinition>,
     pub edges: Vec<EdgeDefinition>,
+    #[serde(skip)]
+    pub execution_results: HashMap<String, HashMap<String, DataValue>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -105,7 +107,11 @@ pub fn build_definition_from_graph(graph: &NodeGraph) -> NodeGraphDefinition {
         }
     }
 
-    NodeGraphDefinition { nodes, edges }
+    NodeGraphDefinition { 
+        nodes, 
+        edges,
+        execution_results: HashMap::new(),
+    }
 }
 
 fn node_to_definition(id: &str, node: &dyn Node) -> NodeDefinition {

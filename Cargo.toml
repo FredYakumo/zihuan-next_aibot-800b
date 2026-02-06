@@ -1,5 +1,5 @@
 [package]
-name = "zihuan_next_aibot-800b"
+name = "zihuan_next"
 version = "0.1.0"
 edition = "2021"
 description = "A bot for daily helper and coding helper, support for adapter qq bot, web, edge devices"

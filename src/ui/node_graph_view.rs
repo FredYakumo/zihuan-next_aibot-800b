@@ -1,3 +1,4 @@
+use log::info;
 use slint::{ModelRc, VecModel, SharedString, ComponentHandle};
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -10,6 +11,7 @@ use crate::node::graph_io::{
     load_graph_definition_from_json,
     NodeGraphDefinition,
 };
+use crate::node::{Port, DataValue};
 use crate::node::registry::NODE_REGISTRY;
 
 use crate::ui::graph_window::{
@@ -28,15 +30,7 @@ const CANVAS_WIDTH: f32 = 1200.0;
 const CANVAS_HEIGHT: f32 = 800.0;
 const EDGE_THICKNESS_RATIO: f32 = 0.3;
 
-#[derive(Debug, Clone)]
-enum InlinePortValue {
-    Text(String),
-    Bool(bool),
-}
-
-fn inline_port_key(node_id: &str, port_name: &str) -> String {
-    format!("{node_id}::{port_name}")
-}
+use crate::ui::node_render::{InlinePortValue, inline_port_key, get_node_preview_text};
 
 pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
     register_cjk_fonts();
@@ -178,19 +172,51 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
 
     let ui_handle = ui.as_weak();
     let graph_state_clone = Rc::clone(&graph_state);
+    let current_file_clone = Rc::clone(&current_file);
+    let selection_state_clone = Rc::clone(&selection_state);
+    let inline_inputs_clone = Rc::clone(&inline_inputs);
     ui.on_run_graph(move || {
-        let graph_def = graph_state_clone.borrow();
+        let mut graph_def = graph_state_clone.borrow_mut();
+        let inline_inputs_map = inline_inputs_clone.borrow();
+        
+        // Set up inline values in global context for string_data nodes
+        {
+            use crate::node::util_nodes::STRING_DATA_CONTEXT;
+            let mut context = STRING_DATA_CONTEXT.write().unwrap();
+            context.clear();
+            
+            for node in &graph_def.nodes {
+                if node.node_type == "string_data" {
+                    let key = inline_port_key(&node.id, "text");
+                    if let Some(InlinePortValue::Text(value)) = inline_inputs_map.get(&key) {
+                        context.insert(node.id.clone(), value.clone());
+                    }
+                }
+            }
+        }
         
         // Build node graph from definition and execute
         match crate::node::registry::build_node_graph_from_definition(&graph_def) {
             Ok(mut node_graph) => {
-                println!("开始执行节点图...");
-                match node_graph.execute() {
-                    Ok(_) => {
-                        println!("节点图执行成功!");
+                info!("开始执行节点图...");
+                
+                match node_graph.execute_and_capture_results() {
+                    Ok(results) => {
+                        info!("节点图执行成功!");
+                        // Store execution results
+                        graph_def.execution_results = results;
+                        
                         if let Some(ui) = ui_handle.upgrade() {
-                            // Update connection status to show success
                             ui.set_connection_status("✓ 节点图执行成功".into());
+                            // Refresh UI to show execution results
+                            let label = current_file_clone.borrow().clone();
+                            apply_graph_to_ui(
+                                &ui,
+                                &graph_def,
+                                Some(label),
+                                &selection_state_clone.borrow(),
+                                &inline_inputs_map,
+                            );
                         }
                     }
                     Err(e) => {
@@ -674,6 +700,12 @@ fn apply_graph_to_ui(
             let (node_width, node_height) = node_dimensions(node);
             let label = format!("{}", node.name);
             let is_selected = selection_state.selected_node_ids.contains(&node.id);
+            let preview_text = get_node_preview_text(
+                &node.id,
+                &node.node_type,
+                &graph,
+                inline_inputs,
+            );
             
             let input_ports: Vec<PortVm> = node
                 .input_ports
@@ -735,9 +767,23 @@ fn apply_graph_to_ui(
                 })
                 .collect();
 
+            // Get string_data text value from inline inputs
+            let string_data_text = if node.node_type == "string_data" {
+                let key = inline_port_key(&node.id, "text");
+                match inline_inputs.get(&key) {
+                    Some(InlinePortValue::Text(value)) => value.clone(),
+                    _ => String::new(),
+                }
+            } else {
+                String::new()
+            };
+
             NodeVm {
                 id: node.id.clone().into(),
                 label: label.into(),
+                preview_text: preview_text.into(),
+                node_type: node.node_type.clone().into(),
+                string_data_text: string_data_text.into(),
                 x: position.map(|p| snap_to_grid(p.x)).unwrap_or(0.0),
                 y: position.map(|p| snap_to_grid(p.y)).unwrap_or(0.0),
                 width: node_width,
