@@ -6,6 +6,22 @@ use crate::llm::{Message, function_tools::FunctionTool};
 use crate::bot_adapter::adapter::SharedBotAdapter;
 use crate::bot_adapter::models::event_model::MessageEvent;
 
+/// Redis connection configuration, passed between nodes as a reference
+#[derive(Debug, Clone)]
+pub struct RedisConfig {
+    pub url: Option<String>,
+    pub reconnect_max_attempts: Option<u32>,
+    pub reconnect_interval_secs: Option<u64>,
+}
+
+/// MySQL connection configuration, passed between nodes as a reference
+#[derive(Debug, Clone)]
+pub struct MySqlConfig {
+    pub url: Option<String>,
+    pub reconnect_max_attempts: Option<u32>,
+    pub reconnect_interval_secs: Option<u64>,
+}
+
 /// Dataflow datatype. Use for checking compatibility between ports.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum DataType {
@@ -20,6 +36,8 @@ pub enum DataType {
     MessageEvent,
     FunctionTools,
     BotAdapterRef,
+    RedisRef,
+    MySqlRef,
     
     Custom(String),
 }
@@ -38,6 +56,8 @@ impl fmt::Display for DataType {
             DataType::MessageEvent => write!(f, "MessageEvent"),
             DataType::FunctionTools => write!(f, "FunctionTools"),
             DataType::BotAdapterRef => write!(f, "BotAdapterRef"),
+            DataType::RedisRef => write!(f, "RedisRef"),
+            DataType::MySqlRef => write!(f, "MySqlRef"),
             DataType::Custom(name) => write!(f, "Custom({})", name),
         }
     }
@@ -57,6 +77,8 @@ pub enum DataValue {
     MessageEvent(MessageEvent),
     FunctionTools(Vec<Arc<dyn FunctionTool>>),
     BotAdapterRef(SharedBotAdapter),
+    RedisRef(Arc<RedisConfig>),
+    MySqlRef(Arc<MySqlConfig>),
 }
 
 impl DataValue {
@@ -79,6 +101,8 @@ impl DataValue {
             DataValue::MessageEvent(_) => DataType::MessageEvent,
             DataValue::FunctionTools(_) => DataType::FunctionTools,
             DataValue::BotAdapterRef(_) => DataType::BotAdapterRef,
+            DataValue::RedisRef(_) => DataType::RedisRef,
+            DataValue::MySqlRef(_) => DataType::MySqlRef,
         }
     }
 
@@ -125,6 +149,18 @@ impl DataValue {
                 Value::Array(tool_defs)
             }
             DataValue::BotAdapterRef(_) => Value::String("BotAdapterRef".to_string()),
+            DataValue::RedisRef(config) => serde_json::json!({
+                "type": "RedisRef",
+                "url": config.url,
+                "reconnect_max_attempts": config.reconnect_max_attempts,
+                "reconnect_interval_secs": config.reconnect_interval_secs,
+            }),
+            DataValue::MySqlRef(config) => serde_json::json!({
+                "type": "MySqlRef",
+                "url": config.url,
+                "reconnect_max_attempts": config.reconnect_max_attempts,
+                "reconnect_interval_secs": config.reconnect_interval_secs,
+            }),
         }
     }
 }
@@ -143,6 +179,8 @@ impl fmt::Debug for DataValue {
             DataValue::MessageEvent(value) => f.debug_tuple("MessageEvent").field(value).finish(),
             DataValue::FunctionTools(value) => f.debug_tuple("FunctionTools").field(value).finish(),
             DataValue::BotAdapterRef(_) => f.debug_tuple("BotAdapterRef").finish(),
+            DataValue::RedisRef(config) => f.debug_tuple("RedisRef").field(config).finish(),
+            DataValue::MySqlRef(config) => f.debug_tuple("MySqlRef").field(config).finish(),
         }
     }
 }

@@ -10,14 +10,7 @@ use log::{info, error, warn};
 use log_util::log_util::LogUtil;
 use lazy_static::lazy_static;
 use clap::Parser;
-use std::sync::Arc;
-use std::time::Duration;
-
-use bot_adapter::adapter::{BotAdapter, BotAdapterConfig};
-use config::{load_config, build_redis_url, build_mysql_url};
-use llm::llm_api::LLMAPI;
-use llm::function_tools::{MathTool, NaturalLanguageReplyTool, CodeWriterTool};
-use crate::llm::agent::brain::BrainAgent;
+use config::load_config;
 
 
 
@@ -29,10 +22,10 @@ lazy_static! {
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
-    #[arg(long = "graph-json", value_name = "PATH", help = "从JSON读取节点图（可选）")]
+    #[arg(long = "graph-json", value_name = "PATH", help = "节点图JSON文件路径（非GUI模式下必需）")]
     graph_json: Option<String>,
 
-    #[arg(long = "no-gui", help = "不打开GUI界面")]
+    #[arg(long = "no-gui", help = "以非GUI模式运行节点图（需要--graph-json参数）")]
     no_gui: bool,
 }
 
@@ -51,114 +44,66 @@ async fn main() {
     // Parse command line arguments
     let args = Args::parse();
 
-    if args.graph_json.is_some()  || !args.no_gui {
-        let mut graph = if let Some(path) = args.graph_json.as_ref() {
-            match node::load_graph_definition_from_json(path) {
-                Ok(graph) => Some(graph),
-                Err(err) => {
-                    error!("Failed to load graph JSON: {}", err);
-                    return;
-                }
+    // Non-GUI mode: requires graph JSON file
+    if args.no_gui {
+        let graph_path = match args.graph_json {
+            Some(path) => path,
+            None => {
+                error!("非GUI模式必须通过 --graph-json 参数指定节点图文件");
+                return;
             }
-        } else {
-            None
         };
 
-        if let Some(graph) = graph.as_mut() {
-            node::ensure_positions(graph);
-        }
-
-        if !args.no_gui {
-            if let Err(err) = ui::node_graph_view::show_graph(graph) {
-                error!("Failed to render graph: {}", err);
+        info!("加载节点图文件: {}", graph_path);
+        match node::load_graph_definition_from_json(&graph_path) {
+            Ok(definition) => {
+                if let Err(e) = execute_node_graph(definition).await {
+                    error!("节点图执行失败: {}", e);
+                }
+            }
+            Err(err) => {
+                error!("加载节点图失败: {}", err);
             }
         }
-
         return;
     }
 
-    let qq_id = String::new();
-
-    info!("zihuan_next_aibot-800b starting...");
-
-    // Load configuration from config.yaml, fallback to environment variables
-    let config = load_config();
-
-    // Build REDIS_URL from config
-    let redis_url = build_redis_url(&config);
-
-    if redis_url.is_some() {
-        info!("Redis URL configured from config.yaml or environment");
+    // GUI mode: load graph if provided, otherwise start with empty graph
+    let mut graph = if let Some(path) = args.graph_json.as_ref() {
+        match node::load_graph_definition_from_json(path) {
+            Ok(graph) => Some(graph),
+            Err(err) => {
+                error!("加载节点图失败: {}", err);
+                return;
+            }
+        }
     } else {
-        warn!("No REDIS_URL or REDIS_HOST/PORT found in config.yaml; Redis will not be used.");
-    }
-
-    // Build DATABASE_URL (MySQL) from config
-    let database_url = build_mysql_url(&config);
-
-    if database_url.is_some() {
-        info!("MySQL Database URL configured from config.yaml or environment");
-    } else {
-        warn!("No DATABASE_URL or MYSQL_* found in config.yaml; MySQL persistence will not be used.");
-    }
-
-    // Initialize LLM and function tools
-    let agent_llm = if let (Some(api_endpoint), Some(model_name)) = (
-        config.agent_model_api.clone(),
-        config.agent_model_name.clone(),
-    ) {
-        let api_key = config.agent_model_api_key.clone();
-        info!("Initializing Agent LLM: {} with endpoint: {}", model_name, api_endpoint);
-        Arc::new(LLMAPI::new(
-            model_name,
-            api_endpoint,
-            api_key,
-            Duration::from_secs(30),
-        )) as Arc<dyn llm::LLMBase + Send + Sync>
-    } else {
-        error!("Missing agent_model_api or agent_model_name in configuration");
-        return;
+        None
     };
 
-    // Initialize function tools
-    let tools: Vec<Arc<dyn llm::function_tools::FunctionTool>> = vec![
-        Arc::new(MathTool::new()),
-        Arc::new(NaturalLanguageReplyTool::new(agent_llm.clone())),
-        Arc::new(CodeWriterTool::new(agent_llm.clone())),
-        // Note: ChatHistoryTool will be initialized later by BotAdapter with MessageStore
-    ];
-
-    info!("Initialized {} function tools", tools.len());
-
-    // Create BrainAgent with LLM and tools
-    let brain_agent = BrainAgent::new(agent_llm, tools, "傲娇".into());
-
-    // Convert BrainAgent to AgentBox
-    let agent_box: Option<Box<dyn bot_adapter::adapter::BrainAgentTrait>> = 
-        Some(Box::new(brain_agent) as Box<dyn bot_adapter::adapter::BrainAgentTrait>);
-
-    // Create and start the bot adapter
-    let adapter_config = BotAdapterConfig::new(
-        config.bot_server_url,
-        config.bot_server_token,
-        qq_id,
-    )
-    .with_redis_url(redis_url)
-    .with_database_url(database_url)
-    .with_redis_reconnect(
-        config.redis_reconnect_max_attempts,
-        config.redis_reconnect_interval_secs,
-    )
-    .with_mysql_reconnect(
-        config.mysql_reconnect_max_attempts,
-        config.mysql_reconnect_interval_secs,
-    )
-    .with_brain_agent(agent_box);
-
-    let adapter = BotAdapter::new(adapter_config).await;
-    let adapter = adapter.into_shared();
-    info!("Bot adapter initialized, connecting to server...");
-    if let Err(e) = BotAdapter::start(adapter).await {
-        error!("Bot adapter error: {}", e);
+    if let Some(graph) = graph.as_mut() {
+        node::ensure_positions(graph);
     }
+
+    if let Err(err) = ui::node_graph_view::show_graph(graph) {
+        error!("UI渲染失败: {}", err);
+    }
+}
+
+/// Execute a node graph loaded from JSON definition
+async fn execute_node_graph(definition: node::NodeGraphDefinition) -> Result<(), Box<dyn std::error::Error>> {
+    info!("构建节点图");
+    let mut graph = node::registry::build_node_graph_from_definition(&definition)?;
+
+    // Load LLM configuration for any LLM nodes that might be in the graph
+    let config = load_config();
+    if config.agent_model_api.is_none() || config.agent_model_name.is_none() {
+        warn!("节点图中的LLM节点可能无法正常工作：缺少 agent_model_api 或 agent_model_name 配置");
+    }
+
+    info!("执行节点图");
+    graph.execute()?;
+    info!("节点图执行完成");
+
+    Ok(())
 }

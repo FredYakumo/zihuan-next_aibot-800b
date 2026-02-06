@@ -1,24 +1,15 @@
-BOT_SERVER_URL: ws://127.0.0.1:3001
-# BOT_SERVER_TOKEN: your bot server connect token.  # Uncomment and set if needed
-REDIS_HOST: redis
-REDIS_PORT: 6379
-REDIS_DB: 0
-# REDIS_PASSWORD: yourpassword  # Uncomment and set if needed
-REDIS_RECONNECT_MAX_ATTEMPTS: 3
-REDIS_RECONNECT_INTERVAL_SECS: 60
-
-# MySQL Database Configuration Example
-MYSQL_HOST: 127.0.0.1
-MYSQL_PORT: 3306
-MYSQL_USER: zihuan_user
-MYSQL_PASSWORD: your_mysql_password
-MYSQL_DATABASE: zihuan_aibot
-MYSQL_RECONNECT_MAX_ATTEMPTS: 3
-MYSQL_RECONNECT_INTERVAL_SECS: 60
-
+# LLM Configuration
 natural_language_model_api: http://api.your_llm_api.com/completion
 natural_language_model_api_key: sk-your-api-key
 natural_language_model_name: gpt-5.2
 agent_model_api: http://api.your_llm_api.com/completion
 agent_model_api_key: sk-your-api-key
 agent_model_name: "Claude Haiku 4.5"
+
+# Note: BOT_SERVER_URL, BOT_SERVER_TOKEN, Redis and MySQL configurations
+# have been moved to node-level input ports (BotAdapterNode, RedisNode, MySqlNode).
+# Use environment variables or configure them directly in the node graph:
+#   BOT_SERVER_URL=ws://127.0.0.1:3001
+#   BOT_SERVER_TOKEN=your_token
+#   REDIS_URL=redis://localhost:6379/0
+#   DATABASE_URL=mysql://user:password@127.0.0.1:3306/dbname

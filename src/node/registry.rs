@@ -124,6 +124,7 @@ pub fn init_node_registry() -> Result<()> {
     use crate::llm::node_impl::{LLMNode, AgentNode, TextProcessorNode};
     use crate::bot_adapter::node_impl::{BotAdapterNode, MessageSenderNode};
     use crate::bot_adapter::message_event_to_string::MessageEventToStringNode;
+    use crate::node::database_nodes::{RedisNode, MySqlNode};
 
     // Utility nodes
     register_node!(
@@ -196,6 +197,23 @@ pub fn init_node_registry() -> Result<()> {
         "Bot适配器",
         "将消息事件转换为LLM提示文本",
         MessageEventToStringNode
+    );
+
+    // Database nodes
+    register_node!(
+        "redis",
+        "Redis连接",
+        "数据库",
+        "构建Redis连接配置",
+        RedisNode
+    );
+
+    register_node!(
+        "mysql",
+        "MySQL连接",
+        "数据库",
+        "构建MySQL连接配置",
+        MySqlNode
     );
 
     Ok(())
