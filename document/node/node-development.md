@@ -466,3 +466,4 @@ fn test_node_in_graph() {
 | EventProducer example | `src/bot_adapter/node_impl.rs` (`BotAdapterNode`) |
 | LLM-based nodes | `src/llm/node_impl.rs` |
 | JSON format | [node-graph-json.md](./node-graph-json.md) |
+| Lifecycle & execution details | [node-lifecycle.md](./node-lifecycle.md) |

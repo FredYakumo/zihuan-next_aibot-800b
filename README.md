@@ -105,12 +105,22 @@ cargo run -- --no-gui
 cargo run -- --graph-json my_workflow.json --no-gui
 ```
 
+## Documentation
+
+- **[User Guide](document/user-guide.md)** — Installation, configuration, and running the application
+- **[Program Execution Flow](document/program-execute.md)** — Internal execution details for GUI and Headless modes
+- **[Node Graph JSON Specification](document/node/node-graph-json.md)** — JSON format for saving and loading node graphs
+- **[Node Lifecycle & Execution](document/node/node-lifecycle.md)** — Node execution model, scheduling, and data flow
+- **[Node Development Guide](document/node/node-development.md)** — Creating custom nodes and extending the system
+
 ## Development
 
 ### Creating Custom Nodes
 1.  Implement the `Node` trait in a new `.rs` file in `src/node/`.
 2.  Define inputs, outputs, and the `execute` logic.
 3.  Register the node in `src/node/registry.rs`.
+
+For detailed instructions, see the [Node Development Guide](document/node/node-development.md).
 
 ### Project Structure
 - `src/node/`: Core graph engine and node definitions.
