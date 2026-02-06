@@ -47,11 +47,8 @@ impl Node for BotAdapterNode {
 
     fn input_ports(&self) -> Vec<Port> {
         vec![
-            Port::new("trigger", DataType::Boolean)
-                .with_description("Trigger to start receiving messages"),
             Port::new("qq_id", DataType::String)
-                .with_description("QQ ID to login")
-                .optional(),
+                .with_description("QQ ID to login"),
             Port::new("bot_server_url", DataType::String)
                 .with_description("Bot服务器WebSocket地址"),
             Port::new("bot_server_token", DataType::String)
