@@ -1,4 +1,5 @@
-import { HorizontalBox, VerticalBox, ScrollView, LineEdit, CheckBox } from "std-widgets.slint";
+import { HorizontalBox, VerticalBox, ScrollView, LineEdit, CheckBox, Palette } from "std-widgets.slint";
+import { AppTheme } from "theme.slint";
 
 export struct PortVm {
     name: string,
@@ -72,6 +73,7 @@ export struct NodeTypeVm {
 
 component CjkText inherits Text {
     font-family: "Heiti SC";
+    color: AppTheme.text-primary;
 }
 
 component CjkButton inherits Rectangle {
@@ -80,10 +82,10 @@ component CjkButton inherits Rectangle {
 
     width: 120px;
     height: 32px;
-    background: #2f2f2f;
+    background: AppTheme.surface-overlay;
     border-radius: 6px;
     border-width: 1px;
-    border-color: #4a4a4a;
+    border-color: AppTheme.border;
 
     TouchArea {
         clicked => { root.clicked(); }
@@ -91,7 +93,7 @@ component CjkButton inherits Rectangle {
 
     CjkText {
         text: root.text;
-        color: #f0f0f0;
+        color: AppTheme.text-primary;
         vertical-alignment: center;
         horizontal-alignment: center;
         font-size: 12px;
@@ -104,10 +106,10 @@ component CjkDeleteButton inherits Rectangle {
 
     width: 120px;
     height: 32px;
-    background: #d32f2f;
+    background: AppTheme.danger-bg;
     border-radius: 6px;
     border-width: 1px;
-    border-color: #f44336;
+    border-color: AppTheme.danger;
 
     TouchArea {
         clicked => { root.clicked(); }
@@ -115,7 +117,7 @@ component CjkDeleteButton inherits Rectangle {
 
     CjkText {
         text: root.text;
-        color: #ffffff;
+        color: AppTheme.text-on-primary;
         vertical-alignment: center;
         horizontal-alignment: center;
         font-size: 12px;
@@ -129,10 +131,10 @@ component CjkRunButton inherits Rectangle {
 
     width: 120px;
     height: 32px;
-    background: #2e7d32;
+    background: AppTheme.primary-muted;
     border-radius: 6px;
     border-width: 1px;
-    border-color: #4caf50;
+    border-color: AppTheme.primary;
 
     TouchArea {
         clicked => { root.clicked(); }
@@ -140,7 +142,7 @@ component CjkRunButton inherits Rectangle {
 
     CjkText {
         text: root.text;
-        color: #ffffff;
+        color: AppTheme.text-on-primary;
         vertical-alignment: center;
         horizontal-alignment: center;
         font-size: 12px;
@@ -193,10 +195,10 @@ component NodeItem inherits Rectangle {
         node_height,
         grid_size * max(min_rows, header_rows + max(input_ports.length, output_ports.length)) + inner-padding-bottom
     ) * 1px;
-    background: touch.pressed ? #3a3a3a : #2b2b2b;
+    background: touch.pressed ? AppTheme.node-bg-pressed : AppTheme.node-bg;
     border-radius: 8px;
     border-width: is_selected ? 2px : 1px;
-    border-color: is_selected ? #4caf50 : #4a4a4a;
+    border-color: is_selected ? AppTheme.selection : AppTheme.border;
 
     touch := TouchArea {
         clicked => {
@@ -238,7 +240,7 @@ component NodeItem inherits Rectangle {
 
     CjkText {
         text: root.label;
-        color: #f0f0f0;
+        color: AppTheme.text-primary;
         horizontal-alignment: center;
         font-size: 14px;
         font-weight: 700;
@@ -254,9 +256,9 @@ component NodeItem inherits Rectangle {
         width: (grid_size * 0.6) * 1px;
         height: (grid_size * 0.6) * 1px;
         border-radius: (grid_size * 0.3) * 1px;
-        background: port.is_connected ? #2d8659 : (port.is_required ? #d32f2f : #666666);
+        background: port.is_connected ? AppTheme.primary-muted : (port.is_required ? AppTheme.danger-bg : AppTheme.node-port-bg);
         border-width: 1px;
-        border-color: port.is_connected ? #4caf50 : (port.is_required ? #f44336 : #999999);
+        border-color: port.is_connected ? AppTheme.primary : (port.is_required ? AppTheme.danger : AppTheme.node-port-border);
 
         TouchArea {
             pointer-event(event) => {
@@ -279,7 +281,7 @@ component NodeItem inherits Rectangle {
 
             CjkText {
                 text: port.name;
-                color: #cccccc;
+                color: AppTheme.text-secondary;
                 font-size: 10px;
                 vertical-alignment: center;
                 overflow: elide;
@@ -313,9 +315,9 @@ component NodeItem inherits Rectangle {
         width: (grid_size * 0.6) * 1px;
         height: (grid_size * 0.6) * 1px;
         border-radius: (grid_size * 0.3) * 1px;
-        background: port.is_connected ? #7a5a1f : #666666;
+        background: port.is_connected ? AppTheme.primary-muted : (port.is_required ? AppTheme.danger-bg : AppTheme.node-port-bg);
         border-width: 1px;
-        border-color: port.is_connected ? #b58a3b : #999999;
+        border-color: port.is_connected ? AppTheme.primary : (port.is_required ? AppTheme.danger : AppTheme.node-port-border);
 
         TouchArea {
             pointer-event(event) => {
@@ -328,7 +330,7 @@ component NodeItem inherits Rectangle {
 
     for port[i] in output_ports: CjkText {
         text: port.name;
-        color: #cccccc;
+        color: AppTheme.text-secondary;
         font-size: 10px;
         vertical-alignment: center;
         horizontal-alignment: right;
@@ -343,7 +345,7 @@ component NodeItem inherits Rectangle {
         y: root.height - (grid_size * 0.5) * 1px - (grid_size * 0.1) * 1px;
         width: (grid_size * 0.5) * 1px;
         height: (grid_size * 0.5) * 1px;
-        background: #4a4a4a;
+        background: AppTheme.border;
         border-radius: 3px;
 
         TouchArea {
@@ -416,7 +418,7 @@ component GraphCanvas inherits Rectangle {
     in-out property <string> drag_from_port: "";
     in-out property <bool> drag_from_is_input: false;
 
-    background: #1e1e1e;
+    background: AppTheme.background;
     width: 100%;
     height: 100%;
 
@@ -426,7 +428,7 @@ component GraphCanvas inherits Rectangle {
         x: 0px;
         y: 0px;
         fill: transparent;
-        stroke: #2a2a2a;
+        stroke: AppTheme.grid-line;
         stroke-width: 1px;
         clip: false;
         viewbox-x: 0;
@@ -491,7 +493,7 @@ component GraphCanvas inherits Rectangle {
         y: segment.y * 1px;
         width: segment.width * 1px;
         height: segment.height * 1px;
-        background: edges[segment.edge_index].is_selected ? #4caf50 : #ffffff;
+        background: edges[segment.edge_index].is_selected ? AppTheme.edge-selected : AppTheme.edge;
         border-radius: (root.edge_thickness / 2) * 1px;
         
         TouchArea {
@@ -511,7 +513,7 @@ component GraphCanvas inherits Rectangle {
         y: (corner.y - root.edge_thickness / 2) * 1px;
         width: root.edge_thickness * 1px;
         height: root.edge_thickness * 1px;
-        background: edges[corner.edge_index].is_selected ? #4caf50 : #ffffff;
+        background: edges[corner.edge_index].is_selected ? AppTheme.edge-selected : AppTheme.edge;
         border-radius: (root.edge_thickness / 2) * 1px;
         
         TouchArea {
@@ -531,14 +533,14 @@ component GraphCanvas inherits Rectangle {
         y: (label.y - label.height / 2) * 1px;
         width: label.width * 1px;
         height: label.height * 1px;
-        background: #1e1e1ecc;
+        background: AppTheme.label-bg;
         border-radius: 4px;
         border-width: 1px;
-        border-color: #444444;
+        border-color: AppTheme.label-border;
 
         CjkText {
             text: label.text;
-            color: #ffffff;
+            color: AppTheme.text-primary;
             horizontal-alignment: center;
             vertical-alignment: center;
             font-size: 10px;
@@ -551,7 +553,7 @@ component GraphCanvas inherits Rectangle {
         x: 0px;
         y: 0px;
         fill: transparent;
-        stroke: #ffffff;
+        stroke: AppTheme.edge;
         stroke-width: root.edge_thickness * 1px;
         viewbox-x: 0;
         viewbox-y: 0;
@@ -585,9 +587,9 @@ component GraphCanvas inherits Rectangle {
         y: root.box_selection_y * 1px;
         width: root.box_selection_width * 1px;
         height: root.box_selection_height * 1px;
-        background: #4caf5030;
+        background: AppTheme.selection-bg;
         border-width: 2px;
-        border-color: #4caf50;
+        border-color: AppTheme.selection;
         border-radius: 0px;
     }
 
@@ -645,7 +647,7 @@ export component ErrorDialog inherits Rectangle {
     in property <string> error_message;
     callback close();
 
-    background: #00000080;
+    background: AppTheme.overlay-mask;
 
     TouchArea {
         clicked => { root.close(); }
@@ -656,10 +658,10 @@ export component ErrorDialog inherits Rectangle {
         y: (parent.height - self.height) / 2;
         width: 800px;
         height: 200px;
-        background: #2b2b2b;
+        background: AppTheme.error-bg;
         border-radius: 8px;
         border-width: 1px;
-        border-color: #e57373; // Softer red
+        border-color: AppTheme.error-border;
 
         TouchArea {} // Block clicks
 
@@ -682,12 +684,12 @@ export component ErrorDialog inherits Rectangle {
                             width: 36px;
                             height: 36px;
                             border-radius: 18px;
-                            background: #e57373;
+                            background: AppTheme.error-icon-bg;
 
                             CjkText {
                                 text: "!";
                                 font-size: 24px;
-                                color: #ffffff;
+                                color: AppTheme.text-on-primary;
                                 horizontal-alignment: center;
                                 vertical-alignment: center;
                                 font-weight: 700;
@@ -704,17 +706,17 @@ export component ErrorDialog inherits Rectangle {
                     CjkText {
                         text: "节点图执行失败";
                         font-size: 16px;
-                        color: #ef5350;
+                        color: AppTheme.error-title;
                         font-weight: 700;
                         horizontal-alignment: left;
                     }
 
                     // Error message with scrollbar
                     Rectangle {
-                        background: #2c2020; // Slightly reddish dark background
+                        background: AppTheme.error-message-bg;
                         border-radius: 4px;
                         border-width: 1px;
-                        border-color: #5c3030;
+                        border-color: AppTheme.error-message-border;
                         
                         ScrollView {
                             VerticalLayout {
@@ -723,7 +725,7 @@ export component ErrorDialog inherits Rectangle {
                                 CjkText {
                                     text: root.error_message;
                                     font-size: 12px;
-                                    color: #ffcdd2; // Light red text
+                                    color: AppTheme.error-message-text;
                                     wrap: word-wrap;
                                     horizontal-alignment: left;
                                 }
@@ -757,7 +759,7 @@ export component NodeSelector inherits Rectangle {
     property <string> current_search: "";
     property <string> current_category: "";
 
-    background: #00000080;
+    background: AppTheme.overlay-mask;
 
     TouchArea {
         clicked => { root.close(); }
@@ -768,10 +770,10 @@ export component NodeSelector inherits Rectangle {
         y: (parent.height - self.height) / 2;
         width: 700px;
         height: 600px;
-        background: #2b2b2b;
+        background: AppTheme.node-bg;
         border-radius: 12px;
         border-width: 2px;
-        border-color: #4a4a4a;
+        border-color: AppTheme.border;
 
         TouchArea {} // Block clicks
 
@@ -782,7 +784,7 @@ export component NodeSelector inherits Rectangle {
             CjkText {
                 text: "选择节点类型";
                 font-size: 18px;
-                color: #f0f0f0;
+                color: AppTheme.text-primary;
                 horizontal-alignment: center;
                 height: 30px;
             }
@@ -797,7 +799,8 @@ export component NodeSelector inherits Rectangle {
                         text: "搜索:";
                         vertical-alignment: center;
                         width: 40px;
-                        color: #cccccc;
+                        color: AppTheme.text-secondary;
+
                     }
                     LineEdit {
                          placeholder-text: "输入节点名称...";
@@ -814,7 +817,7 @@ export component NodeSelector inherits Rectangle {
                         text: "分类:";
                         vertical-alignment: center;
                         width: 40px;
-                        color: #cccccc;
+                        color: AppTheme.text-secondary;
                    }
                    ScrollView {
                        HorizontalLayout {
@@ -827,9 +830,9 @@ export component NodeSelector inherits Rectangle {
                                width: 60px;
                                height: 30px;
                                border-radius: 4px;
-                               background: root.current_category == "" ? #4caf50 : #3a3a3a;
+                               background: root.current_category == "" ? AppTheme.category-bg-selected : AppTheme.category-bg;
                                border-width: 1px;
-                               border-color: #555555;
+                               border-color: AppTheme.border-light;
                                
                                TouchArea {
                                    clicked => {
@@ -840,7 +843,7 @@ export component NodeSelector inherits Rectangle {
                                
                                CjkText {
                                    text: "全部";
-                                   color: #ffffff;
+                                   color: root.current_category == "" ? AppTheme.category-text-selected : AppTheme.category-text;
                                    horizontal-alignment: center;
                                    vertical-alignment: center;
                                    font-size: 12px;
@@ -851,9 +854,9 @@ export component NodeSelector inherits Rectangle {
                                width: 80px;
                                height: 30px;
                                border-radius: 4px;
-                               background: root.current_category == category ? #4caf50 : #3a3a3a;
+                               background: root.current_category == category ? AppTheme.category-bg-selected : AppTheme.category-bg;
                                border-width: 1px;
-                               border-color: #555555;
+                               border-color: AppTheme.border-light;
                                
                                TouchArea {
                                    clicked => {
@@ -864,7 +867,7 @@ export component NodeSelector inherits Rectangle {
                                
                                CjkText {
                                    text: category;
-                                   color: #ffffff;
+                                   color: root.current_category == category ? AppTheme.category-text-selected : AppTheme.category-text;
                                    horizontal-alignment: center;
                                    vertical-alignment: center;
                                    font-size: 12px;
@@ -876,9 +879,9 @@ export component NodeSelector inherits Rectangle {
             }
 
             Rectangle {
-                background: #1e1e1e;
+                background: AppTheme.background;
                 border-radius: 6px;
-                border-color: #333333;
+                border-color: AppTheme.border-light;
                 border-width: 1px;
                 
                 ScrollView {
@@ -892,10 +895,11 @@ export component NodeSelector inherits Rectangle {
 
                         for node_type in root.node_types: Rectangle {
                             height: 80px;
-                            background: #2f2f2f;
+                            background: AppTheme.surface-overlay;
                             border-radius: 6px;
                             border-width: 1px;
-                            border-color: #4a4a4a;
+                            border-color: AppTheme.border;
+
 
                             TouchArea {
                                 clicked => { 
@@ -913,14 +917,13 @@ export component NodeSelector inherits Rectangle {
                                     CjkText {
                                         text: node_type.display_name;
                                         font-size: 16px;
-                                        color: #ffffff;
+                                        color: AppTheme.text-primary;
                                         font-weight: 700;
                                         vertical-alignment: center;
                                     }
 
                                     Rectangle {
-                                        background: #3a3a3a;
-                                        border-radius: 4px;
+                                        background: AppTheme.category-bg;
                                         width: self.height * 2.5; 
                                         
                                         HorizontalLayout {
@@ -929,7 +932,7 @@ export component NodeSelector inherits Rectangle {
                                             CjkText {
                                                 text: node_type.category;
                                                 font-size: 11px;
-                                                color: #aaaaaa;
+                                                color: AppTheme.text-muted;
                                                 vertical-alignment: center;
                                                 horizontal-alignment: center;
                                             }
@@ -940,7 +943,7 @@ export component NodeSelector inherits Rectangle {
                                 CjkText {
                                     text: node_type.description;
                                     font-size: 13px;
-                                    color: #bbbbbb;
+                                    color: AppTheme.text-muted;
                                     wrap: word-wrap;
                                     vertical-alignment: top;
                                     overflow: elide;
@@ -1036,9 +1039,9 @@ export component NodeGraphWindow inherits Window {
         // Menu bar area
         Rectangle {
             height: 40px;
-            background: #2b2b2b;
+            background: AppTheme.surface;
             border-width: 1px;
-            border-color: #4a4a4a;
+            border-color: AppTheme.border;
 
             HorizontalBox {
                 padding: 6px;
@@ -1047,7 +1050,7 @@ export component NodeGraphWindow inherits Window {
 
                 CjkText {
                     text: "节点图";
-                    color: #f0f0f0;
+                    color: AppTheme.text-primary;
                     font-size: 14px;
                     vertical-alignment: center;
                     width: 80px;

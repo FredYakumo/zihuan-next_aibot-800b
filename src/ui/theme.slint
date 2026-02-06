@@ -1,0 +1,55 @@
+import { Palette } from "std-widgets.slint";
+
+export global AppTheme {
+    out property <brush> background: Palette.color-scheme == ColorScheme.dark ? #1e1e1e : #ffffff;
+    out property <brush> surface: Palette.color-scheme == ColorScheme.dark ? #2b2b2b : #f5f5f5;
+    out property <brush> surface-overlay: Palette.color-scheme == ColorScheme.dark ? #2f2f2f : #ffffff;
+    
+    out property <brush> border: Palette.color-scheme == ColorScheme.dark ? #4a4a4a : #cccccc;
+    out property <brush> border-light: Palette.color-scheme == ColorScheme.dark ? #555555 : #c0c0c0;
+    out property <brush> grid-line: Palette.color-scheme == ColorScheme.dark ? #2a2a2a : #e5e5e5;
+    
+    out property <brush> text-primary: Palette.color-scheme == ColorScheme.dark ? #f0f0f0 : #333333;
+    out property <brush> text-secondary: Palette.color-scheme == ColorScheme.dark ? #cccccc : #666666;
+    out property <brush> text-muted: Palette.color-scheme == ColorScheme.dark ? #aaaaaa : #888888;
+    out property <brush> text-disabled: Palette.color-scheme == ColorScheme.dark ? #666666 : #999999;
+    out property <brush> text-on-primary: #ffffff;
+    
+    out property <brush> primary: #4caf50;
+    out property <brush> primary-muted: #2d8659;
+    out property <brush> selection: #4caf50;
+    out property <brush> selection-bg: #4caf5030;
+    
+    out property <brush> danger: #f44336;
+    out property <brush> danger-bg: #d32f2f;
+    
+    out property <brush> edge: Palette.color-scheme == ColorScheme.dark ? #ffffff : #555555;
+    out property <brush> edge-selected: #4caf50;
+    
+    out property <brush> node-bg: Palette.color-scheme == ColorScheme.dark ? #2b2b2b : #ffffff;
+    out property <brush> node-bg-pressed: Palette.color-scheme == ColorScheme.dark ? #3a3a3a : #f0f0f0;
+    out property <brush> node-port-bg: Palette.color-scheme == ColorScheme.dark ? #666666 : #b0b0b0;
+    out property <brush> node-port-border: Palette.color-scheme == ColorScheme.dark ? #999999 : #888888;
+    
+    // Dialog/Overlay specific
+    out property <brush> overlay-mask: #00000080;
+    
+    // Error Dialog Specific
+    out property <brush> error-bg: Palette.color-scheme == ColorScheme.dark ? #2b2b2b : #ffffff;
+    out property <brush> error-border: Palette.color-scheme == ColorScheme.dark ? #e57373 : #e57373;
+    out property <brush> error-icon-bg: #e57373;
+    out property <brush> error-title: #ef5350;
+    out property <brush> error-message-bg: Palette.color-scheme == ColorScheme.dark ? #2c2020 : #ffebee;
+    out property <brush> error-message-border: Palette.color-scheme == ColorScheme.dark ? #5c3030 : #ef9a9a;
+    out property <brush> error-message-text: Palette.color-scheme == ColorScheme.dark ? #ffcdd2 : #c62828;
+    
+    // Category chips
+    out property <brush> category-bg: Palette.color-scheme == ColorScheme.dark ? #3a3a3a : #e0e0e0;
+    out property <brush> category-bg-selected: #4caf50;
+    out property <brush> category-text: Palette.color-scheme == ColorScheme.dark ? #ffffff : #333333;
+    out property <brush> category-text-selected: #ffffff;
+    
+    // Edge Labels
+    out property <brush> label-bg: Palette.color-scheme == ColorScheme.dark ? #1e1e1ecc : #ffffffcc;
+    out property <brush> label-border: Palette.color-scheme == ColorScheme.dark ? #444444 : #cccccc;
+}
