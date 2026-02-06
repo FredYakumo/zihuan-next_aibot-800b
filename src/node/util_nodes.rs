@@ -198,13 +198,18 @@ impl Node for PreviewStringNode {
     }
 
     fn output_ports(&self) -> Vec<Port> {
-        vec![]
+        vec![
+
+        ]
     }
 
     fn execute(&mut self, inputs: HashMap<String, DataValue>) -> Result<HashMap<String, DataValue>> {
         self.validate_inputs(&inputs)?;
 
-        let outputs = HashMap::new();
+        let mut outputs = HashMap::new();
+        if let Some(value) = inputs.get("text") {
+            outputs.insert("text".to_string(), value.clone());
+        }
 
         self.validate_outputs(&outputs)?;
         Ok(outputs)

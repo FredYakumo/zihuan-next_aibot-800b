@@ -43,6 +43,9 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use crate::error::Result;
 
+type OutputPool = HashMap<String, HashMap<String, DataValue>>;
+type InputSourceMap = HashMap<String, HashMap<String, (String, String)>>;
+
 pub mod data_value;
 pub mod util_nodes;
 pub mod graph_io;
@@ -205,6 +208,8 @@ pub struct NodeGraph {
     pub nodes: HashMap<String, Box<dyn Node>>,
     pub inline_values: HashMap<String, HashMap<String, DataValue>>,
     stop_flag: Arc<AtomicBool>,
+    execution_callback: Option<Box<dyn Fn(&str, &HashMap<String, DataValue>, &HashMap<String, DataValue>) + Send + Sync>>,
+    edges: Vec<EdgeDefinition>,
 }
 
 impl NodeGraph {
@@ -213,7 +218,20 @@ impl NodeGraph {
             nodes: HashMap::new(),
             inline_values: HashMap::new(),
             stop_flag: Arc::new(AtomicBool::new(false)),
+            execution_callback: None,
+            edges: Vec::new(),
         }
+    }
+
+    pub fn set_execution_callback<F>(&mut self, callback: F)
+    where
+        F: Fn(&str, &HashMap<String, DataValue>, &HashMap<String, DataValue>) + Send + Sync + 'static,
+    {
+        self.execution_callback = Some(Box::new(callback));
+    }
+
+    pub fn set_edges(&mut self, edges: Vec<EdgeDefinition>) {
+        self.edges = edges;
     }
 
     pub fn get_stop_flag(&self) -> Arc<AtomicBool> {
@@ -241,6 +259,10 @@ impl NodeGraph {
     }
 
     pub fn execute(&mut self) -> Result<()> {
+        if !self.edges.is_empty() {
+            return self.execute_with_edges();
+        }
+
         let mut output_producers: HashMap<String, String> = HashMap::new();
         for (node_id, node) in &self.nodes {
             for port in node.output_ports() {
@@ -469,6 +491,9 @@ impl NodeGraph {
         &mut self,
         node_results: &mut HashMap<String, HashMap<String, DataValue>>,
     ) -> Result<()> {
+        if !self.edges.is_empty() {
+            return self.execute_and_capture_results_with_edges(node_results);
+        }
         
         let mut output_producers: HashMap<String, String> = HashMap::new();
         for (node_id, node) in &self.nodes {
@@ -570,7 +595,16 @@ impl NodeGraph {
                 })?;
 
                 let inputs = Self::collect_inputs(node.as_ref(), &data_pool, &node_id, self.inline_values.get(&node_id))?;
+                
+                let inputs_clone = if self.execution_callback.is_some() { Some(inputs.clone()) } else { None };
+
                 let outputs = node.execute(inputs.clone())?;
+                
+                if let Some(cb) = &self.execution_callback {
+                    if let Some(inp) = inputs_clone {
+                        cb(&node_id, &inp, &outputs);
+                    }
+                }
                 
                 // Store both inputs and outputs for this node
                 let mut result = inputs;
@@ -597,6 +631,500 @@ impl NodeGraph {
         Ok(())
     }
 
+    fn execute_with_edges(&mut self) -> Result<()> {
+        let (connected_nodes, dependents, dependencies, input_sources) = self.build_edge_maps()?;
+
+        if connected_nodes.is_empty() {
+            return Ok(());
+        }
+
+        let mut in_degree: HashMap<String, usize> = HashMap::new();
+        for node_id in self.nodes.keys() {
+            in_degree.insert(node_id.clone(), 0);
+        }
+
+        for (node_id, deps) in &dependencies {
+            if let Some(count) = in_degree.get_mut(node_id) {
+                *count += deps.len();
+            }
+        }
+
+        let mut ready: Vec<String> = in_degree
+            .iter()
+            .filter_map(|(id, degree)| if *degree == 0 { Some(id.clone()) } else { None })
+            .collect();
+        ready.sort();
+
+        let mut ordered: Vec<String> = Vec::with_capacity(self.nodes.len());
+        while !ready.is_empty() {
+            let node_id = ready.remove(0);
+            ordered.push(node_id.clone());
+
+            if let Some(next_nodes) = dependents.get(&node_id) {
+                for next_id in next_nodes {
+                    if let Some(count) = in_degree.get_mut(next_id) {
+                        *count = count.saturating_sub(1);
+                        if *count == 0 {
+                            ready.push(next_id.clone());
+                        }
+                    }
+                }
+                ready.sort();
+            }
+        }
+
+        if ordered.len() != self.nodes.len() {
+            return Err(crate::error::Error::ValidationError(
+                "Cycle detected in node dependencies".to_string(),
+            ));
+        }
+
+        for node_id in &connected_nodes {
+            let node = self.nodes.get(node_id).ok_or_else(|| {
+                crate::error::Error::ValidationError(format!(
+                    "Node '{}' not found during execution",
+                    node_id
+                ))
+            })?;
+
+            let has_inline = self.inline_values.get(node_id);
+            let input_map = input_sources.get(node_id);
+
+            for port in node.input_ports() {
+                if !port.required {
+                    continue;
+                }
+                let has_edge = input_map
+                    .and_then(|m| m.get(&port.name))
+                    .is_some();
+                let has_inline_value = has_inline
+                    .map(|m| m.contains_key(&port.name))
+                    .unwrap_or(false);
+                if !has_edge && !has_inline_value {
+                    return Err(crate::error::Error::ValidationError(format!(
+                        "Required input port '{}' for node '{}' is not bound",
+                        port.name, node_id
+                    )));
+                }
+            }
+        }
+
+        let event_producer_set: HashSet<String> = self
+            .nodes
+            .iter()
+            .filter_map(|(id, node)| {
+                if node.node_type() == NodeType::EventProducer {
+                    Some(id.clone())
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        if event_producer_set.is_empty() {
+            let mut data_pool: OutputPool = HashMap::new();
+            for node_id in ordered {
+                if !connected_nodes.contains(&node_id) {
+                    continue;
+                }
+                let inputs = {
+                    let node = self.nodes.get(&node_id).ok_or_else(|| {
+                        crate::error::Error::ValidationError(format!(
+                            "Node '{}' not found during execution",
+                            node_id
+                        ))
+                    })?;
+                    self.collect_inputs_with_edges(
+                        node.as_ref(),
+                        &data_pool,
+                        &input_sources,
+                        &node_id,
+                        self.inline_values.get(&node_id),
+                    )?
+                };
+
+                let inputs_clone = if self.execution_callback.is_some() { Some(inputs.clone()) } else { None };
+                let outputs = {
+                    let node = self.nodes.get_mut(&node_id).ok_or_else(|| {
+                        crate::error::Error::ValidationError(format!(
+                            "Node '{}' not found during execution",
+                            node_id
+                        ))
+                    })?;
+                    node.execute(inputs)?
+                };
+
+                if let Some(cb) = &self.execution_callback {
+                    if let Some(inp) = inputs_clone {
+                        cb(&node_id, &inp, &outputs);
+                    }
+                }
+
+                self.insert_outputs(&mut data_pool, &node_id, outputs);
+            }
+
+            return Ok(());
+        }
+
+        let mut reachable_from_event: HashSet<String> = HashSet::new();
+        let mut reachable_map: HashMap<String, HashSet<String>> = HashMap::new();
+        for event_id in &event_producer_set {
+            let mut visited: HashSet<String> = HashSet::new();
+            let mut stack: Vec<String> = vec![event_id.clone()];
+            while let Some(current) = stack.pop() {
+                if !visited.insert(current.clone()) {
+                    continue;
+                }
+                if let Some(children) = dependents.get(&current) {
+                    for child in children {
+                        if !visited.contains(child) {
+                            stack.push(child.clone());
+                        }
+                    }
+                }
+            }
+            reachable_from_event.extend(visited.iter().cloned());
+            reachable_map.insert(event_id.clone(), visited);
+        }
+
+        let mut base_data_pool: OutputPool = HashMap::new();
+        for node_id in &ordered {
+            if !connected_nodes.contains(node_id) {
+                continue;
+            }
+            if reachable_from_event.contains(node_id) {
+                continue;
+            }
+
+            let inputs = {
+                let node = self.nodes.get(node_id).ok_or_else(|| {
+                    crate::error::Error::ValidationError(format!(
+                        "Node '{}' not found during execution",
+                        node_id
+                    ))
+                })?;
+                self.collect_inputs_with_edges(
+                    node.as_ref(),
+                    &base_data_pool,
+                    &input_sources,
+                    node_id,
+                    self.inline_values.get(node_id),
+                )?
+            };
+
+            let outputs = {
+                let node = self.nodes.get_mut(node_id).ok_or_else(|| {
+                    crate::error::Error::ValidationError(format!(
+                        "Node '{}' not found during execution",
+                        node_id
+                    ))
+                })?;
+                node.execute(inputs)?
+            };
+            self.insert_outputs(&mut base_data_pool, node_id, outputs);
+        }
+
+        let mut event_producer_roots: Vec<String> = event_producer_set
+            .iter()
+            .filter(|event_id| {
+                connected_nodes.contains(*event_id)
+                    && !dependencies
+                        .get(*event_id)
+                        .map(|deps| deps.iter().any(|dep| event_producer_set.contains(dep)))
+                        .unwrap_or(false)
+            })
+            .cloned()
+            .collect();
+        event_producer_roots.sort();
+
+        for root_id in event_producer_roots {
+            self.run_event_producer_with_edges(
+                &root_id,
+                &base_data_pool,
+                &reachable_map,
+                &event_producer_set,
+                &ordered,
+                &connected_nodes,
+                &input_sources,
+            )?;
+        }
+
+        Ok(())
+    }
+
+    fn execute_and_capture_results_with_edges(
+        &mut self,
+        node_results: &mut HashMap<String, HashMap<String, DataValue>>,
+    ) -> Result<()> {
+        let (connected_nodes, dependents, dependencies, input_sources) = self.build_edge_maps()?;
+
+        if connected_nodes.is_empty() {
+            return Ok(());
+        }
+
+        let mut in_degree: HashMap<String, usize> = HashMap::new();
+        for node_id in self.nodes.keys() {
+            in_degree.insert(node_id.clone(), 0);
+        }
+
+        for (node_id, deps) in &dependencies {
+            if let Some(count) = in_degree.get_mut(node_id) {
+                *count += deps.len();
+            }
+        }
+
+        let mut ready: Vec<String> = in_degree
+            .iter()
+            .filter_map(|(id, degree)| if *degree == 0 { Some(id.clone()) } else { None })
+            .collect();
+        ready.sort();
+
+        let mut ordered: Vec<String> = Vec::with_capacity(self.nodes.len());
+        while !ready.is_empty() {
+            let node_id = ready.remove(0);
+            ordered.push(node_id.clone());
+
+            if let Some(next_nodes) = dependents.get(&node_id) {
+                for next_id in next_nodes {
+                    if let Some(count) = in_degree.get_mut(next_id) {
+                        *count = count.saturating_sub(1);
+                        if *count == 0 {
+                            ready.push(next_id.clone());
+                        }
+                    }
+                }
+                ready.sort();
+            }
+        }
+
+        if ordered.len() != self.nodes.len() {
+            return Err(crate::error::Error::ValidationError(
+                "Cycle detected in node dependencies".to_string(),
+            ));
+        }
+
+        for node_id in &connected_nodes {
+            let node = self.nodes.get(node_id).ok_or_else(|| {
+                crate::error::Error::ValidationError(format!(
+                    "Node '{}' not found during execution",
+                    node_id
+                ))
+            })?;
+
+            let has_inline = self.inline_values.get(node_id);
+            let input_map = input_sources.get(node_id);
+
+            for port in node.input_ports() {
+                if !port.required {
+                    continue;
+                }
+                let has_edge = input_map
+                    .and_then(|m| m.get(&port.name))
+                    .is_some();
+                let has_inline_value = has_inline
+                    .map(|m| m.contains_key(&port.name))
+                    .unwrap_or(false);
+                if !has_edge && !has_inline_value {
+                    return Err(crate::error::Error::ValidationError(format!(
+                        "Required input port '{}' for node '{}' is not bound",
+                        port.name, node_id
+                    )));
+                }
+            }
+        }
+
+        let event_producer_set: HashSet<String> = self
+            .nodes
+            .iter()
+            .filter_map(|(id, node)| {
+                if node.node_type() == NodeType::EventProducer {
+                    Some(id.clone())
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        if event_producer_set.is_empty() {
+            let mut data_pool: OutputPool = HashMap::new();
+            for node_id in ordered {
+                if !connected_nodes.contains(&node_id) {
+                    continue;
+                }
+                let inputs = {
+                    let node = self.nodes.get(&node_id).ok_or_else(|| {
+                        crate::error::Error::ValidationError(format!(
+                            "Node '{}' not found during execution",
+                            node_id
+                        ))
+                    })?;
+                    self.collect_inputs_with_edges(
+                        node.as_ref(),
+                        &data_pool,
+                        &input_sources,
+                        &node_id,
+                        self.inline_values.get(&node_id),
+                    )?
+                };
+
+                let inputs_clone = if self.execution_callback.is_some() { Some(inputs.clone()) } else { None };
+                let outputs = {
+                    let node = self.nodes.get_mut(&node_id).ok_or_else(|| {
+                        crate::error::Error::ValidationError(format!(
+                            "Node '{}' not found during execution",
+                            node_id
+                        ))
+                    })?;
+                    node.execute(inputs.clone())?
+                };
+
+                if let Some(cb) = &self.execution_callback {
+                    if let Some(inp) = inputs_clone {
+                        cb(&node_id, &inp, &outputs);
+                    }
+                }
+
+                let mut result = inputs;
+                result.extend(outputs.iter().map(|(k, v)| (k.clone(), v.clone())));
+                node_results.insert(node_id.clone(), result);
+
+                self.insert_outputs(&mut data_pool, &node_id, outputs);
+            }
+
+            return Ok(());
+        }
+
+        self.execute_with_edges()?;
+        Ok(())
+    }
+
+    fn build_edge_maps(
+        &self,
+    ) -> Result<(
+        HashSet<String>,
+        HashMap<String, Vec<String>>,
+        HashMap<String, Vec<String>>,
+        InputSourceMap,
+    )> {
+        let mut connected_nodes: HashSet<String> = HashSet::new();
+        let mut dependents: HashMap<String, Vec<String>> = HashMap::new();
+        let mut dependencies: HashMap<String, Vec<String>> = HashMap::new();
+        let mut input_sources: InputSourceMap = HashMap::new();
+
+        for edge in &self.edges {
+            let from_node = self.nodes.get(&edge.from_node_id).ok_or_else(|| {
+                crate::error::Error::ValidationError(format!(
+                    "Node '{}' not found for edge",
+                    edge.from_node_id
+                ))
+            })?;
+            let to_node = self.nodes.get(&edge.to_node_id).ok_or_else(|| {
+                crate::error::Error::ValidationError(format!(
+                    "Node '{}' not found for edge",
+                    edge.to_node_id
+                ))
+            })?;
+
+            let from_port = from_node
+                .output_ports()
+                .into_iter()
+                .find(|p| p.name == edge.from_port)
+                .ok_or_else(|| {
+                    crate::error::Error::ValidationError(format!(
+                        "Output port '{}' not found on node '{}'",
+                        edge.from_port, edge.from_node_id
+                    ))
+                })?;
+
+            let to_port = to_node
+                .input_ports()
+                .into_iter()
+                .find(|p| p.name == edge.to_port)
+                .ok_or_else(|| {
+                    crate::error::Error::ValidationError(format!(
+                        "Input port '{}' not found on node '{}'",
+                        edge.to_port, edge.to_node_id
+                    ))
+                })?;
+
+            if from_port.data_type != to_port.data_type {
+                return Err(crate::error::Error::ValidationError(format!(
+                    "Port type mismatch for edge {}.{} -> {}.{}",
+                    edge.from_node_id, edge.from_port, edge.to_node_id, edge.to_port
+                )));
+            }
+
+            connected_nodes.insert(edge.from_node_id.clone());
+            connected_nodes.insert(edge.to_node_id.clone());
+
+            dependents
+                .entry(edge.from_node_id.clone())
+                .or_default()
+                .push(edge.to_node_id.clone());
+            dependencies
+                .entry(edge.to_node_id.clone())
+                .or_default()
+                .push(edge.from_node_id.clone());
+
+            let entry = input_sources.entry(edge.to_node_id.clone()).or_default();
+            if entry.contains_key(&edge.to_port) {
+                return Err(crate::error::Error::ValidationError(format!(
+                    "Input port '{}' on node '{}' has multiple connections",
+                    edge.to_port, edge.to_node_id
+                )));
+            }
+            entry.insert(
+                edge.to_port.clone(),
+                (edge.from_node_id.clone(), edge.from_port.clone()),
+            );
+        }
+
+        Ok((connected_nodes, dependents, dependencies, input_sources))
+    }
+
+    fn collect_inputs_with_edges(
+        &self,
+        node: &dyn Node,
+        data_pool: &OutputPool,
+        input_sources: &InputSourceMap,
+        node_id: &str,
+        inline_values: Option<&HashMap<String, DataValue>>,
+    ) -> Result<HashMap<String, DataValue>> {
+        let mut inputs: HashMap<String, DataValue> = HashMap::new();
+        let sources = input_sources.get(node_id);
+
+        for port in node.input_ports() {
+            if let Some(source_map) = sources.and_then(|m| m.get(&port.name)) {
+                let (from_node_id, from_port) = source_map;
+                if let Some(from_outputs) = data_pool.get(from_node_id) {
+                    if let Some(value) = from_outputs.get(from_port) {
+                        inputs.insert(port.name.clone(), value.clone());
+                        continue;
+                    }
+                }
+            }
+
+            if let Some(value) = inline_values.and_then(|m| m.get(&port.name)) {
+                inputs.insert(port.name.clone(), value.clone());
+            } else if port.required {
+                return Err(crate::error::Error::ValidationError(format!(
+                    "Required input port '{}' for node '{}' is missing",
+                    port.name, node_id
+                )));
+            }
+        }
+
+        node.validate_inputs(&inputs)?;
+        Ok(inputs)
+    }
+
+    fn insert_outputs(&self, pool: &mut OutputPool, node_id: &str, outputs: HashMap<String, DataValue>) {
+        let entry = pool.entry(node_id.to_string()).or_default();
+        for (key, value) in outputs {
+            entry.insert(key, value);
+        }
+    }
+
     fn collect_inputs(
         node: &dyn Node,
         data_pool: &HashMap<String, DataValue>,
@@ -618,6 +1146,163 @@ impl NodeGraph {
         }
         node.validate_inputs(&inputs)?;
         Ok(inputs)
+    }
+
+    fn run_event_producer_with_edges(
+        &mut self,
+        node_id: &str,
+        base_data_pool: &OutputPool,
+        reachable_map: &HashMap<String, HashSet<String>>,
+        event_producer_set: &HashSet<String>,
+        ordered: &[String],
+        connected_nodes: &HashSet<String>,
+        input_sources: &InputSourceMap,
+    ) -> Result<()> {
+        let reachable = reachable_map
+            .get(node_id)
+            .cloned()
+            .unwrap_or_default();
+
+        {
+            let inputs = {
+                let node = self.nodes.get(node_id).ok_or_else(|| {
+                    crate::error::Error::ValidationError(format!(
+                        "Node '{}' not found during execution",
+                        node_id
+                    ))
+                })?;
+                self.collect_inputs_with_edges(
+                    node.as_ref(),
+                    base_data_pool,
+                    input_sources,
+                    node_id,
+                    self.inline_values.get(node_id),
+                )?
+            };
+
+            let node = self.nodes.get_mut(node_id).ok_or_else(|| {
+                crate::error::Error::ValidationError(format!(
+                    "Node '{}' not found during execution",
+                    node_id
+                ))
+            })?;
+
+            node.on_start(inputs).map_err(|e| {
+                crate::error::Error::ValidationError(format!("[NODE_ERROR:{}] {}", node_id, e))
+            })?;
+        }
+
+        loop {
+            if self.stop_flag.load(Ordering::Relaxed) {
+                info!("Event producer '{}' stopped by user request", node_id);
+                break;
+            }
+
+            let outputs = {
+                let node = self.nodes.get_mut(node_id).ok_or_else(|| {
+                    crate::error::Error::ValidationError(format!(
+                        "Node '{}' not found during execution",
+                        node_id
+                    ))
+                })?;
+
+                match node.on_update().map_err(|e| {
+                    crate::error::Error::ValidationError(format!("[NODE_ERROR:{}] {}", node_id, e))
+                })? {
+                    Some(outputs) => {
+                        node.validate_outputs(&outputs)?;
+                        outputs
+                    }
+                    None => break,
+                }
+            };
+
+            if let Some(cb) = &self.execution_callback {
+                cb(node_id, &HashMap::new(), &outputs);
+            }
+
+            let mut event_pool = base_data_pool.clone();
+            self.insert_outputs(&mut event_pool, node_id, outputs);
+
+            let mut skipped: HashSet<String> = HashSet::new();
+            for ordered_id in ordered {
+                if ordered_id == node_id {
+                    continue;
+                }
+                if skipped.contains(ordered_id) {
+                    continue;
+                }
+                if !reachable.contains(ordered_id) {
+                    continue;
+                }
+                if !connected_nodes.contains(ordered_id) {
+                    continue;
+                }
+
+                if event_producer_set.contains(ordered_id) {
+                    self.run_event_producer_with_edges(
+                        ordered_id,
+                        &event_pool,
+                        reachable_map,
+                        event_producer_set,
+                        ordered,
+                        connected_nodes,
+                        input_sources,
+                    )?;
+                    if let Some(skip_set) = reachable_map.get(ordered_id) {
+                        skipped.extend(skip_set.iter().cloned());
+                    }
+                    continue;
+                }
+
+                let inputs = {
+                    let node = self.nodes.get(ordered_id).ok_or_else(|| {
+                        crate::error::Error::ValidationError(format!(
+                            "Node '{}' not found during execution",
+                            ordered_id
+                        ))
+                    })?;
+                    self.collect_inputs_with_edges(
+                        node.as_ref(),
+                        &event_pool,
+                        input_sources,
+                        ordered_id,
+                        self.inline_values.get(ordered_id),
+                    )?
+                };
+
+                let inputs_clone = if self.execution_callback.is_some() { Some(inputs.clone()) } else { None };
+                let outputs = {
+                    let node = self.nodes.get_mut(ordered_id).ok_or_else(|| {
+                        crate::error::Error::ValidationError(format!(
+                            "Node '{}' not found during execution",
+                            ordered_id
+                        ))
+                    })?;
+                    node.execute(inputs).map_err(|e| {
+                        crate::error::Error::ValidationError(format!("[NODE_ERROR:{}] {}", ordered_id, e))
+                    })?
+                };
+
+                if let Some(cb) = &self.execution_callback {
+                    if let Some(inp) = inputs_clone {
+                        cb(ordered_id, &inp, &outputs);
+                    }
+                }
+
+                self.insert_outputs(&mut event_pool, ordered_id, outputs);
+            }
+        }
+
+        let node = self.nodes.get_mut(node_id).ok_or_else(|| {
+            crate::error::Error::ValidationError(format!(
+                "Node '{}' not found during cleanup",
+                node_id
+            ))
+        })?;
+        node.on_cleanup()?;
+
+        Ok(())
     }
 
     fn run_event_producer(
@@ -672,6 +1357,10 @@ impl NodeGraph {
                 }
             };
 
+            if let Some(cb) = &self.execution_callback {
+                cb(node_id, &HashMap::new(), &outputs);
+            }
+
             let mut event_pool = base_data_pool.clone();
             for (key, value) in outputs {
                 event_pool.insert(key, value);
@@ -711,9 +1400,19 @@ impl NodeGraph {
                 })?;
 
                 let inputs = Self::collect_inputs(node.as_ref(), &event_pool, ordered_id, self.inline_values.get(ordered_id))?;
+                
+                let inputs_clone = if self.execution_callback.is_some() { Some(inputs.clone()) } else { None };
+
                 let outputs = node.execute(inputs).map_err(|e| {
                     crate::error::Error::ValidationError(format!("[NODE_ERROR:{}] {}", ordered_id, e))
                 })?;
+                
+                if let Some(cb) = &self.execution_callback {
+                    if let Some(inp) = inputs_clone {
+                        cb(ordered_id, &inp, &outputs);
+                    }
+                }
+
                 for (key, value) in outputs {
                     if event_pool.contains_key(&key) {
                         return Err(crate::error::Error::ValidationError(format!(

@@ -17,6 +17,7 @@ pub struct BotAdapterNode {
     event_rx: Option<TokioMutex<mpsc::UnboundedReceiver<MessageEvent>>>,
     error_rx: Option<TokioMutex<mpsc::UnboundedReceiver<String>>>,
     adapter_handle: Option<SharedBotAdapter>,
+    runtime: Option<tokio::runtime::Runtime>,
 }
 
 impl BotAdapterNode {
@@ -27,6 +28,7 @@ impl BotAdapterNode {
             event_rx: None,
             error_rx: None,
             adapter_handle: None,
+            runtime: None,
         }
     }
 }
@@ -144,7 +146,9 @@ impl Node for BotAdapterNode {
         } else {
             let runtime = tokio::runtime::Runtime::new()?;
             runtime.spawn(run_adapter);
-            runtime.block_on(async { adapter_rx.await.ok() })
+            let adapter = runtime.block_on(async { adapter_rx.await.ok() });
+            self.runtime = Some(runtime);
+            adapter
         };
 
         let adapter_handle = adapter_handle.ok_or_else(|| {
@@ -235,6 +239,7 @@ impl Node for BotAdapterNode {
         self.event_rx = None;
         self.error_rx = None;
         self.adapter_handle = None;
+        self.runtime = None;
         Ok(())
     }
 }

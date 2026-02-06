@@ -1,9 +1,8 @@
 use log::{error, info};
-use slint::{ModelRc, VecModel, SharedString, ComponentHandle, Model};
-use std::cell::RefCell;
+use slint::{ModelRc, VecModel, SharedString, ComponentHandle};
 use std::collections::HashMap;
 use std::path::Path;
-use std::rc::Rc;
+use std::sync::{Arc, Mutex};
 
 use crate::error::Result;
 use crate::node::graph_io::{
@@ -41,19 +40,19 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
         apply_window_state(&ui.window(), &state);
     }
 
-    let graph_state = Rc::new(RefCell::new(initial_graph.unwrap_or_default()));
-    let selection_state = Rc::new(RefCell::new(crate::ui::selection::SelectionState::default()));
-    let inline_inputs = Rc::new(RefCell::new(HashMap::<String, InlinePortValue>::new()));
+    let graph_state = Arc::new(Mutex::new(initial_graph.unwrap_or_default()));
+    let selection_state = Arc::new(Mutex::new(crate::ui::selection::SelectionState::default()));
+    let inline_inputs = Arc::new(Mutex::new(HashMap::<String, InlinePortValue>::new()));
     
     // Track if a graph is currently running
-    let is_running = Rc::new(RefCell::new(false));
+    let is_running = Arc::new(Mutex::new(false));
     // Store stop flag for current execution
-    let current_stop_flag: Rc<RefCell<Option<std::sync::Arc<std::sync::atomic::AtomicBool>>>> = Rc::new(RefCell::new(None));
+    let current_stop_flag: Arc<Mutex<Option<std::sync::Arc<std::sync::atomic::AtomicBool>>>> = Arc::new(Mutex::new(None));
 
     // Populate inline_inputs from graph
     {
-        let graph = graph_state.borrow();
-        let mut map = inline_inputs.borrow_mut();
+        let graph = graph_state.lock().unwrap();
+        let mut map = inline_inputs.lock().unwrap();
         for node in &graph.nodes {
             for (port_name, val) in &node.inline_values {
                 let key = inline_port_key(&node.id, port_name);
@@ -67,8 +66,8 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
         }
     }
 
-    let current_file = Rc::new(RefCell::new(
-        if graph_state.borrow().nodes.is_empty() && graph_state.borrow().edges.is_empty() {
+    let current_file = Arc::new(Mutex::new(
+        if graph_state.lock().unwrap().nodes.is_empty() && graph_state.lock().unwrap().edges.is_empty() {
             "未加载 节点图".to_string()
         } else {
             "已加载 节点图".to_string()
@@ -97,23 +96,23 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
     ui.set_node_categories(ModelRc::new(VecModel::from(categories)));
     ui.set_available_node_types(ModelRc::new(VecModel::from(node_types.clone())));
     
-    let all_node_types = Rc::new(node_types);
+    let all_node_types = Arc::new(node_types);
     ui.set_grid_size(GRID_SIZE);
     ui.set_edge_thickness(GRID_SIZE * EDGE_THICKNESS_RATIO);
 
     apply_graph_to_ui(
         &ui,
-        &graph_state.borrow(),
-        Some(current_file.borrow().clone()),
-        &selection_state.borrow(),
-        &inline_inputs.borrow(),
+        &graph_state.lock().unwrap(),
+        Some(current_file.lock().unwrap().clone()),
+        &selection_state.lock().unwrap(),
+        &inline_inputs.lock().unwrap(),
     );
 
     let ui_handle = ui.as_weak();
-    let graph_state_clone = Rc::clone(&graph_state);
-    let current_file_clone = Rc::clone(&current_file);
-    let selection_state_clone = Rc::clone(&selection_state);
-    let inline_inputs_clone = Rc::clone(&inline_inputs);
+    let graph_state_clone = Arc::clone(&graph_state);
+    let current_file_clone = Arc::clone(&current_file);
+    let selection_state_clone = Arc::clone(&selection_state);
+    let inline_inputs_clone = Arc::clone(&inline_inputs);
     ui.on_open_json(move || {
         if let Some(path) = rfd::FileDialog::new()
             .add_filter("Node Graph", &["json"])
@@ -123,7 +122,7 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
                 if let Some(ui) = ui_handle.upgrade() {
                     // Populate inline_inputs from new graph
                     {
-                        let mut map = inline_inputs_clone.borrow_mut();
+                        let mut map = inline_inputs_clone.lock().unwrap();
                         map.clear();
                         for node in &graph.nodes {
                             for (port_name, val) in &node.inline_values {
@@ -138,15 +137,15 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
                         }
                     }
 
-                    *graph_state_clone.borrow_mut() = graph;
+                    *graph_state_clone.lock().unwrap() = graph;
                     let label = path.display().to_string();
-                    *current_file_clone.borrow_mut() = label.clone();
+                    *current_file_clone.lock().unwrap() = label.clone();
                     apply_graph_to_ui(
                         &ui,
-                        &graph_state_clone.borrow(),
+                        &graph_state_clone.lock().unwrap(),
                         Some(label),
-                        &selection_state_clone.borrow(),
-                        &inline_inputs_clone.borrow(),
+                        &selection_state_clone.lock().unwrap(),
+                        &inline_inputs_clone.lock().unwrap(),
                     );
                 }
             }
@@ -154,18 +153,18 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
     });
 
     let ui_handle = ui.as_weak();
-    let graph_state_clone = Rc::clone(&graph_state);
-    let current_file_clone = Rc::clone(&current_file);
-    let selection_state_clone = Rc::clone(&selection_state);
-    let inline_inputs_clone = Rc::clone(&inline_inputs);
+    let graph_state_clone = Arc::clone(&graph_state);
+    let current_file_clone = Arc::clone(&current_file);
+    let selection_state_clone = Arc::clone(&selection_state);
+    let inline_inputs_clone = Arc::clone(&inline_inputs);
     ui.on_save_json(move || {
         if let Some(path) = rfd::FileDialog::new()
             .add_filter("Node Graph", &["json"])
             .set_file_name("node_graph.json")
             .save_file()
         {
-            let mut graph = graph_state_clone.borrow_mut();
-            let inline_inputs_map = inline_inputs_clone.borrow();
+            let mut graph = graph_state_clone.lock().unwrap();
+            let inline_inputs_map = inline_inputs_clone.lock().unwrap();
             
             // Populate inline_values from inline_inputs map to graph definition
             for node in &mut graph.nodes {
@@ -188,13 +187,13 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
                 eprintln!("Failed to save graph: {}", e);
             } else {
                 let label = path.display().to_string();
-                *current_file_clone.borrow_mut() = label.clone();
+                *current_file_clone.lock().unwrap() = label.clone();
                 if let Some(ui) = ui_handle.upgrade() {
                     apply_graph_to_ui(
                         &ui,
                         &graph,
                         Some(label),
-                        &selection_state_clone.borrow(),
+                        &selection_state_clone.lock().unwrap(),
                         &inline_inputs_map,
                     );
                 }
@@ -203,47 +202,47 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
     });
 
     let ui_handle = ui.as_weak();
-    let graph_state_clone = Rc::clone(&graph_state);
-    let current_file_clone = Rc::clone(&current_file);
-    let selection_state_clone = Rc::clone(&selection_state);
-    let inline_inputs_clone = Rc::clone(&inline_inputs);
+    let graph_state_clone = Arc::clone(&graph_state);
+    let current_file_clone = Arc::clone(&current_file);
+    let selection_state_clone = Arc::clone(&selection_state);
+    let inline_inputs_clone = Arc::clone(&inline_inputs);
     ui.on_add_node(move |type_id: SharedString| {
         let type_id_str = type_id.as_str();
-        let mut graph = graph_state_clone.borrow_mut();
+        let mut graph = graph_state_clone.lock().unwrap();
         if let Err(e) = add_node_to_graph(&mut graph, type_id_str) {
             eprintln!("Failed to add node: {}", e);
             return;
         }
         let label = "已修改(未保存)".to_string();
-        *current_file_clone.borrow_mut() = label.clone();
+        *current_file_clone.lock().unwrap() = label.clone();
         if let Some(ui) = ui_handle.upgrade() {
             apply_graph_to_ui(
                 &ui,
                 &graph,
                 Some(label),
-                &selection_state_clone.borrow(),
-                &inline_inputs_clone.borrow(),
+                &selection_state_clone.lock().unwrap(),
+                &inline_inputs_clone.lock().unwrap(),
             );
         }
     });
 
     let ui_handle = ui.as_weak();
-    let graph_state_clone = Rc::clone(&graph_state);
-    let current_file_clone = Rc::clone(&current_file);
-    let selection_state_clone = Rc::clone(&selection_state);
-    let inline_inputs_clone = Rc::clone(&inline_inputs);
-    let is_running_clone = Rc::clone(&is_running);
-    let current_stop_flag_clone = Rc::clone(&current_stop_flag);
+    let graph_state_clone = Arc::clone(&graph_state);
+    let current_file_clone = Arc::clone(&current_file);
+    let selection_state_clone = Arc::clone(&selection_state);
+    let inline_inputs_clone = Arc::clone(&inline_inputs);
+    let is_running_clone = Arc::clone(&is_running);
+    let current_stop_flag_clone = Arc::clone(&current_stop_flag);
     
     ui.on_run_graph(move || {
         // Check if already running
-        if *is_running_clone.borrow() {
+        if *is_running_clone.lock().unwrap() {
             info!("节点图已在运行中");
             return;
         }
         
-        let mut graph_def = graph_state_clone.borrow_mut().clone();
-        let inline_inputs_map = inline_inputs_clone.borrow().clone();
+        let mut graph_def = graph_state_clone.lock().unwrap().clone();
+        let inline_inputs_map = inline_inputs_clone.lock().unwrap().clone();
         
         // Set up inline values in global context for string_data nodes
         {
@@ -289,17 +288,58 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
                 
                 if has_event_producer {
                     // Execute in background thread for event producers
-                    *is_running_clone.borrow_mut() = true;
+                    *is_running_clone.lock().unwrap() = true;
                     let stop_flag = node_graph.get_stop_flag();
-                    *current_stop_flag_clone.borrow_mut() = Some(stop_flag.clone());
+                    *current_stop_flag_clone.lock().unwrap() = Some(stop_flag.clone());
                     
+                    // Setup execution callback to stream updates to UI
+                    let graph_state_cb = Arc::clone(&graph_state_clone);
+                    let ui_weak_cb = ui_handle.clone();
+                    let current_file_cb = Arc::clone(&current_file_clone);
+                    let selection_state_cb = Arc::clone(&selection_state_clone);
+                    let inline_inputs_cb = inline_inputs_map.clone();
+
+                    node_graph.set_execution_callback(move |node_id, inputs, outputs| {
+                        let node_id = node_id.to_string();
+                        let mut result = inputs.clone();
+                        for (k, v) in outputs {
+                            result.insert(k.clone(), v.clone());
+                        }
+
+                        let graph_state = Arc::clone(&graph_state_cb);
+                        let ui_weak = ui_weak_cb.clone();
+                        let current_file = Arc::clone(&current_file_cb);
+                        let selection_state = Arc::clone(&selection_state_cb);
+                        let inline_inputs = inline_inputs_cb.clone();
+
+                        let _ = slint::invoke_from_event_loop(move || {
+                            if let Ok(mut graph_def) = graph_state.lock() {
+                                graph_def.execution_results.insert(node_id, result);
+                                
+                                if let Some(ui) = ui_weak.upgrade() {
+                                    if let Ok(label) = current_file.lock() {
+                                        if let Ok(selection) = selection_state.lock() {
+                                            apply_graph_to_ui(
+                                                &ui,
+                                                &graph_def,
+                                                Some(label.clone()),
+                                                &selection,
+                                                &inline_inputs,
+                                            );
+                                        }
+                                    }
+                                }
+                            }
+                        });
+                    });
+
                     let ui_weak = ui_handle.clone();
-                    let graph_state_bg = Rc::clone(&graph_state_clone);
-                    let current_file_bg = Rc::clone(&current_file_clone);
-                    let selection_state_bg = Rc::clone(&selection_state_clone);
+                    let graph_state_bg = Arc::clone(&graph_state_clone);
+                    let current_file_bg = Arc::clone(&current_file_clone);
+                    let selection_state_bg = Arc::clone(&selection_state_clone);
                     let inline_inputs_bg = inline_inputs_map.clone();
-                    let is_running_bg = Rc::clone(&is_running_clone);
-                    let current_stop_flag_bg = Rc::clone(&current_stop_flag_clone);
+                    let is_running_bg = Arc::clone(&is_running_clone);
+                    let current_stop_flag_bg = Arc::clone(&current_stop_flag_clone);
                     
                     if let Some(ui) = ui_weak.upgrade() {
                         ui.set_is_graph_running(true);
@@ -312,7 +352,7 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
                         
                         // Update UI on main thread via slint
                         let _ = slint::invoke_from_event_loop(move || {
-                            let mut graph_def = graph_state_bg.borrow_mut();
+                            let mut graph_def = graph_state_bg.lock().unwrap();
                             
                             // Store execution results
                             graph_def.execution_results = execution_result.node_results;
@@ -329,12 +369,12 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
                                 
                                 if let Some(ui) = ui_weak.upgrade() {
                                     // Refresh UI to show error node with red border
-                                    let label = current_file_bg.borrow().clone();
+                                    let label = current_file_bg.lock().unwrap().clone();
                                     apply_graph_to_ui(
                                         &ui,
                                         &graph_def,
                                         Some(label),
-                                        &selection_state_bg.borrow(),
+                                        &selection_state_bg.lock().unwrap(),
                                         &inline_inputs_bg,
                                     );
                                     
@@ -362,20 +402,20 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
                                         ui.set_connection_status("✓ 节点图执行成功".into());
                                     }
                                     // Refresh UI to show execution results
-                                    let label = current_file_bg.borrow().clone();
+                                    let label = current_file_bg.lock().unwrap().clone();
                                     apply_graph_to_ui(
                                         &ui,
                                         &graph_def,
                                         Some(label),
-                                        &selection_state_bg.borrow(),
+                                        &selection_state_bg.lock().unwrap(),
                                         &inline_inputs_bg,
                                     );
                                 }
                             }
                             
                             // Reset running state
-                            *is_running_bg.borrow_mut() = false;
-                            *current_stop_flag_bg.borrow_mut() = None;
+                            *is_running_bg.lock().unwrap() = false;
+                            *current_stop_flag_bg.lock().unwrap() = None;
                             
                             // Update UI running state
                             if let Some(ui) = ui_weak.upgrade() {
@@ -388,7 +428,7 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
                     let execution_result = node_graph.execute_and_capture_results();
                     
                     // Store execution results
-                    graph_state_clone.borrow_mut().execution_results = execution_result.node_results;
+                    graph_state_clone.lock().unwrap().execution_results = execution_result.node_results;
                     
                     if let (Some(error_node_id), Some(error_msg)) = 
                         (execution_result.error_node_id.clone(), execution_result.error_message.clone()) {
@@ -396,18 +436,18 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
                         error!("节点图执行失败: {}", error_msg);
                         
                         // Mark the error node in graph_def
-                        if let Some(node) = graph_state_clone.borrow_mut().nodes.iter_mut().find(|n| n.id == error_node_id) {
+                        if let Some(node) = graph_state_clone.lock().unwrap().nodes.iter_mut().find(|n| n.id == error_node_id) {
                             node.has_error = true;
                         }
                         
                         if let Some(ui) = ui_handle.upgrade() {
                             // Refresh UI to show error node with red border
-                            let label = current_file_clone.borrow().clone();
+                            let label = current_file_clone.lock().unwrap().clone();
                             apply_graph_to_ui(
                                 &ui,
-                                &graph_state_clone.borrow(),
+                                &graph_state_clone.lock().unwrap(),
                                 Some(label),
-                                &selection_state_clone.borrow(),
+                                &selection_state_clone.lock().unwrap(),
                                 &inline_inputs_map,
                             );
                             
@@ -419,19 +459,19 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
                         info!("节点图执行成功!");
                         
                         // Clear error flags from all nodes on success
-                        for node in &mut graph_state_clone.borrow_mut().nodes {
+                        for node in &mut graph_state_clone.lock().unwrap().nodes {
                             node.has_error = false;
                         }
                         
                         if let Some(ui) = ui_handle.upgrade() {
                             ui.set_connection_status("✓ 节点图执行成功".into());
                             // Refresh UI to show execution results
-                            let label = current_file_clone.borrow().clone();
+                            let label = current_file_clone.lock().unwrap().clone();
                             apply_graph_to_ui(
                                 &ui,
-                                &graph_state_clone.borrow(),
+                                &graph_state_clone.lock().unwrap(),
                                 Some(label),
-                                &selection_state_clone.borrow(),
+                                &selection_state_clone.lock().unwrap(),
                                 &inline_inputs_map,
                             );
                         }
@@ -448,17 +488,16 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
     });
 
     // Add stop graph callback
-    let is_running_stop = Rc::clone(&is_running);
-    let current_stop_flag_stop = Rc::clone(&current_stop_flag);
+    let current_stop_flag_stop = Arc::clone(&current_stop_flag);
     ui.on_stop_graph(move || {
-        if let Some(stop_flag) = current_stop_flag_stop.borrow().as_ref() {
+        if let Some(stop_flag) = current_stop_flag_stop.lock().unwrap().as_ref() {
             info!("请求停止节点图执行");
             stop_flag.store(true, std::sync::atomic::Ordering::Relaxed);
         }
     });
 
     let ui_handle = ui.as_weak();
-    let all_node_types_clone = Rc::clone(&all_node_types);
+    let all_node_types_clone = Arc::clone(&all_node_types);
     ui.on_filter_nodes(move |search_text: SharedString, category: SharedString| {
         if let Some(ui) = ui_handle.upgrade() {
             let search_text = search_text.as_str().to_lowercase();
@@ -481,7 +520,7 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
     });
 
     let ui_handle = ui.as_weak();
-    let all_node_types_clone = Rc::clone(&all_node_types);
+    let all_node_types_clone = Arc::clone(&all_node_types);
     ui.on_show_node_type_menu(move || {
         if let Some(ui) = ui_handle.upgrade() {
             ui.set_available_node_types(ModelRc::new(VecModel::from(all_node_types_clone.as_ref().clone())));
@@ -512,10 +551,10 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
     });
 
     let ui_handle = ui.as_weak();
-    let graph_state_clone = Rc::clone(&graph_state);
-    let selection_state_clone = Rc::clone(&selection_state);
+    let graph_state_clone = Arc::clone(&graph_state);
+    let selection_state_clone = Arc::clone(&selection_state);
     ui.on_node_moved(move |node_id: SharedString, x: f32, y: f32| {
-        let mut graph = graph_state_clone.borrow_mut();
+        let mut graph = graph_state_clone.lock().unwrap();
         if let Some(node) = graph.nodes.iter_mut().find(|n| n.id == node_id.as_str()) {
             if let Some(pos) = &mut node.position {
                 pos.x = x;
@@ -527,7 +566,7 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
         
         // Update edges based on new node positions during drag (no snapping for smoothness)
         if let Some(ui) = ui_handle.upgrade() {
-            let selection = selection_state_clone.borrow();
+            let selection = selection_state_clone.lock().unwrap();
             let edges = build_edges(&graph, &selection, false);
             let (edge_segments, edge_corners, edge_labels) = build_edge_segments(&graph, false);
             
@@ -539,16 +578,16 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
     });
 
     let ui_handle = ui.as_weak();
-    let graph_state_clone = Rc::clone(&graph_state);
-    let selection_state_clone = Rc::clone(&selection_state);
+    let graph_state_clone = Arc::clone(&graph_state);
+    let selection_state_clone = Arc::clone(&selection_state);
     ui.on_node_resized(move |node_id: SharedString, width: f32, height: f32| {
-        let mut graph = graph_state_clone.borrow_mut();
+        let mut graph = graph_state_clone.lock().unwrap();
         if let Some(node) = graph.nodes.iter_mut().find(|n| n.id == node_id.as_str()) {
             node.size = Some(crate::node::graph_io::GraphSize { width, height });
         }
 
         if let Some(ui) = ui_handle.upgrade() {
-            let selection = selection_state_clone.borrow();
+            let selection = selection_state_clone.lock().unwrap();
             let edges = build_edges(&graph, &selection, false);
             let (edge_segments, edge_corners, edge_labels) = build_edge_segments(&graph, false);
 
@@ -560,12 +599,12 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
     });
 
     let ui_handle = ui.as_weak();
-    let graph_state_clone = Rc::clone(&graph_state);
-    let current_file_clone = Rc::clone(&current_file);
-    let selection_state_clone = Rc::clone(&selection_state);
-    let inline_inputs_clone = Rc::clone(&inline_inputs);
+    let graph_state_clone = Arc::clone(&graph_state);
+    let current_file_clone = Arc::clone(&current_file);
+    let selection_state_clone = Arc::clone(&selection_state);
+    let inline_inputs_clone = Arc::clone(&inline_inputs);
     ui.on_node_move_finished(move |node_id: SharedString, x: f32, y: f32| {
-        let mut graph = graph_state_clone.borrow_mut();
+        let mut graph = graph_state_clone.lock().unwrap();
         let snapped_x = snap_to_grid(x);
         let snapped_y = snap_to_grid(y);
         if let Some(node) = graph.nodes.iter_mut().find(|n| n.id == node_id.as_str()) {
@@ -580,25 +619,25 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
             }
         }
 
-        let label = current_file_clone.borrow().clone();
+        let label = current_file_clone.lock().unwrap().clone();
         if let Some(ui) = ui_handle.upgrade() {
             apply_graph_to_ui(
                 &ui,
                 &graph,
                 Some(label),
-                &selection_state_clone.borrow(),
-                &inline_inputs_clone.borrow(),
+                &selection_state_clone.lock().unwrap(),
+                &inline_inputs_clone.lock().unwrap(),
             );
         }
     });
 
     let ui_handle = ui.as_weak();
-    let graph_state_clone = Rc::clone(&graph_state);
-    let current_file_clone = Rc::clone(&current_file);
-    let selection_state_clone = Rc::clone(&selection_state);
-    let inline_inputs_clone = Rc::clone(&inline_inputs);
+    let graph_state_clone = Arc::clone(&graph_state);
+    let current_file_clone = Arc::clone(&current_file);
+    let selection_state_clone = Arc::clone(&selection_state);
+    let inline_inputs_clone = Arc::clone(&inline_inputs);
     ui.on_node_resize_finished(move |node_id: SharedString, width: f32, height: f32| {
-        let mut graph = graph_state_clone.borrow_mut();
+        let mut graph = graph_state_clone.lock().unwrap();
         let snapped_width = snap_to_grid(width).max(GRID_SIZE * NODE_WIDTH_CELLS);
         if let Some(node) = graph.nodes.iter_mut().find(|n| n.id == node_id.as_str()) {
             let min_height = GRID_SIZE
@@ -616,39 +655,39 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
         }
 
         let label = "已修改(未保存)".to_string();
-        *current_file_clone.borrow_mut() = label.clone();
+        *current_file_clone.lock().unwrap() = label.clone();
         if let Some(ui) = ui_handle.upgrade() {
             apply_graph_to_ui(
                 &ui,
                 &graph,
                 Some(label),
-                &selection_state_clone.borrow(),
-                &inline_inputs_clone.borrow(),
+                &selection_state_clone.lock().unwrap(),
+                &inline_inputs_clone.lock().unwrap(),
             );
         }
     });
 
-    let graph_state_clone = Rc::clone(&graph_state);
-    let current_file_clone = Rc::clone(&current_file);
-    let port_selection = Rc::new(RefCell::new(None::<(String, String, bool)>));
-    let port_selection_for_click = Rc::clone(&port_selection);
-    let port_selection_for_move = Rc::clone(&port_selection);
-    let port_selection_for_cancel = Rc::clone(&port_selection);
+    let graph_state_clone = Arc::clone(&graph_state);
+    let current_file_clone = Arc::clone(&current_file);
+    let port_selection = Arc::new(Mutex::new(None::<(String, String, bool)>));
+    let port_selection_for_click = Arc::clone(&port_selection);
+    let port_selection_for_move = Arc::clone(&port_selection);
+    let port_selection_for_cancel = Arc::clone(&port_selection);
     let ui_handle_for_click = ui.as_weak();
     let ui_handle_for_move = ui.as_weak();
     let ui_handle_for_cancel = ui.as_weak();
-    let selection_state_clone = Rc::clone(&selection_state);
-    let inline_inputs_clone = Rc::clone(&inline_inputs);
+    let selection_state_clone = Arc::clone(&selection_state);
+    let inline_inputs_clone = Arc::clone(&inline_inputs);
 
     ui.on_port_clicked(move |node_id: SharedString, port_name: SharedString, is_input: bool| {
         let node_id_str = node_id.to_string();
         let port_name_str = port_name.to_string();
 
-        let mut selection = port_selection_for_click.borrow_mut();
+        let mut selection = port_selection_for_click.lock().unwrap();
 
         if let Some((prev_node, prev_port, prev_is_input)) = selection.take() {
             if prev_is_input != is_input {
-                let mut graph = graph_state_clone.borrow_mut();
+                let mut graph = graph_state_clone.lock().unwrap();
                 ensure_positions(&mut graph);
 
                 let (from_node, from_port, to_node, to_port) = if is_input {
@@ -665,7 +704,7 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
                 });
 
                 let label = "已修改(未保存)".to_string();
-                *current_file_clone.borrow_mut() = label.clone();
+                *current_file_clone.lock().unwrap() = label.clone();
 
                 if let Some(ui) = ui_handle_for_click.upgrade() {
                     ui.set_drag_line_visible(false);
@@ -675,8 +714,8 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
                         &ui,
                         &graph,
                         Some(label),
-                        &selection_state_clone.borrow(),
-                        &inline_inputs_clone.borrow(),
+                        &selection_state_clone.lock().unwrap(),
+                        &inline_inputs_clone.lock().unwrap(),
                     );
                 }
             } else {
@@ -685,7 +724,7 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
         } else {
             *selection = Some((node_id_str.clone(), port_name_str.clone(), is_input));
             if let Some(ui) = ui_handle_for_click.upgrade() {
-                let mut graph = graph_state_clone.borrow_mut();
+                let mut graph = graph_state_clone.lock().unwrap();
                 ensure_positions(&mut graph);
                 if let Some((from_x, from_y)) =
                     get_port_center(&graph, node_id_str.as_str(), port_name_str.as_str(), is_input)
@@ -708,7 +747,7 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
     });
 
     ui.on_pointer_moved(move |x: f32, y: f32| {
-        if port_selection_for_move.borrow().is_none() {
+        if port_selection_for_move.lock().unwrap().is_none() {
             return;
         }
 
@@ -719,7 +758,7 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
     });
 
     ui.on_cancel_connect(move || {
-        *port_selection_for_cancel.borrow_mut() = None;
+        *port_selection_for_cancel.lock().unwrap() = None;
         if let Some(ui) = ui_handle_for_cancel.upgrade() {
             ui.set_drag_line_visible(false);
             ui.set_show_port_hint(false);
@@ -728,33 +767,33 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
     });
 
     // Setup selection callbacks using the selection module
-    let selection_state_for_cb = Rc::clone(&selection_state);
-    let inline_inputs_for_cb = Rc::clone(&inline_inputs);
+    let selection_state_for_cb = Arc::clone(&selection_state);
+    let inline_inputs_for_cb = Arc::clone(&inline_inputs);
     let apply_graph_fn = move |ui: &NodeGraphWindow, graph: &NodeGraphDefinition, file: Option<String>| {
         apply_graph_to_ui(
             ui,
             graph,
             file,
-            &selection_state_for_cb.borrow(),
-            &inline_inputs_for_cb.borrow(),
+            &selection_state_for_cb.lock().unwrap(),
+            &inline_inputs_for_cb.lock().unwrap(),
         );
     };
     
     setup_selection_callbacks(
         &ui, 
-        Rc::clone(&graph_state), 
-        Rc::clone(&current_file), 
+        Arc::clone(&graph_state), 
+        Arc::clone(&current_file), 
         apply_graph_fn,
-        Rc::clone(&selection_state)
+        Arc::clone(&selection_state)
     );
     
     // Setup box selection
-    let box_selection = Rc::new(RefCell::new(BoxSelection::new()));
+    let box_selection = Arc::new(Mutex::new(BoxSelection::new()));
     
     let ui_handle = ui.as_weak();
-    let box_selection_clone = Rc::clone(&box_selection);
+    let box_selection_clone = Arc::clone(&box_selection);
     ui.on_box_selection_start(move |x: f32, y: f32| {
-        let mut box_sel = box_selection_clone.borrow_mut();
+        let mut box_sel = box_selection_clone.lock().unwrap();
         box_sel.start(x, y);
         
         if let Some(ui) = ui_handle.upgrade() {
@@ -767,9 +806,9 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
     });
     
     let ui_handle = ui.as_weak();
-    let box_selection_clone = Rc::clone(&box_selection);
+    let box_selection_clone = Arc::clone(&box_selection);
     ui.on_box_selection_update(move |x: f32, y: f32| {
-        let mut box_sel = box_selection_clone.borrow_mut();
+        let mut box_sel = box_selection_clone.lock().unwrap();
         box_sel.update(x, y);
         
         if let Some(ui) = ui_handle.upgrade() {
@@ -782,15 +821,15 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
     });
     
     let ui_handle = ui.as_weak();
-    let box_selection_clone = Rc::clone(&box_selection);
-    let graph_state_clone = Rc::clone(&graph_state);
-    let current_file_clone = Rc::clone(&current_file);
-    let selection_state_clone = Rc::clone(&selection_state);
-    let inline_inputs_clone = Rc::clone(&inline_inputs);
+    let box_selection_clone = Arc::clone(&box_selection);
+    let graph_state_clone = Arc::clone(&graph_state);
+    let current_file_clone = Arc::clone(&current_file);
+    let selection_state_clone = Arc::clone(&selection_state);
+    let inline_inputs_clone = Arc::clone(&inline_inputs);
     ui.on_box_selection_end(move || {
         if let Some(ui) = ui_handle.upgrade() {
-            let mut box_sel = box_selection_clone.borrow_mut();
-            let graph = graph_state_clone.borrow();
+            let mut box_sel = box_selection_clone.lock().unwrap();
+            let graph = graph_state_clone.lock().unwrap();
             
             // Find nodes within the selection box
             let mut selected_nodes = Vec::new();
@@ -804,7 +843,7 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
                 }
             }
             
-            let mut selection = selection_state_clone.borrow_mut();
+            let mut selection = selection_state_clone.lock().unwrap();
             // Clear existing selection and select all found nodes
             selection.clear();
             for node_id in selected_nodes {
@@ -812,13 +851,13 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
             }
             selection.apply_to_ui(&ui); // To update count and other properties
             
-            let label = current_file_clone.borrow().clone();
+            let label = current_file_clone.lock().unwrap().clone();
             apply_graph_to_ui(
                 &ui,
                 &graph,
                 Some(label),
                 &selection.clone(),
-                &inline_inputs_clone.borrow(),
+                &inline_inputs_clone.lock().unwrap(),
             );
             
             box_sel.end();
@@ -826,19 +865,19 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
         }
     });
 
-    let inline_inputs_clone = Rc::clone(&inline_inputs);
+    let inline_inputs_clone = Arc::clone(&inline_inputs);
     ui.on_inline_port_text_changed(move |node_id: SharedString, port_name: SharedString, value: SharedString| {
         let key = inline_port_key(node_id.as_str(), port_name.as_str());
         inline_inputs_clone
-            .borrow_mut()
+            .lock().unwrap()
             .insert(key, InlinePortValue::Text(value.to_string()));
     });
 
-    let inline_inputs_clone = Rc::clone(&inline_inputs);
+    let inline_inputs_clone = Arc::clone(&inline_inputs);
     ui.on_inline_port_bool_changed(move |node_id: SharedString, port_name: SharedString, value: bool| {
         let key = inline_port_key(node_id.as_str(), port_name.as_str());
         inline_inputs_clone
-            .borrow_mut()
+            .lock().unwrap()
             .insert(key, InlinePortValue::Bool(value));
     });
 

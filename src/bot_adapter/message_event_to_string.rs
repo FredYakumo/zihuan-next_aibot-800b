@@ -1,3 +1,5 @@
+use log::info;
+
 use crate::bot_adapter::models::message::MessageProp;
 use crate::error::Result;
 use crate::node::{DataType, DataValue, Node, Port};
@@ -78,7 +80,7 @@ impl Node for MessageEventToStringNode {
         } else {
             return Err("message_event input is required and must be MessageEvent type".into());
         }
-
+        info!("MessageEventToStringNode generated promp2t: {}", outputs.get("prompt").map(|v| v.to_json().to_string()).unwrap_or_default());
         self.validate_outputs(&outputs)?;
         Ok(outputs)
     }

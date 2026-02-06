@@ -260,6 +260,10 @@ pub fn build_node_graph_from_definition(
 ) -> Result<crate::node::NodeGraph> {
     let mut graph = crate::node::NodeGraph::new();
 
+    if !definition.edges.is_empty() {
+        graph.set_edges(definition.edges.clone());
+    }
+
     // Create all nodes
     for node_def in &definition.nodes {
         let node = NODE_REGISTRY.create_node(
