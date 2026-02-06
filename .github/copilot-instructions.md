@@ -87,4 +87,5 @@ cargo run  # In default mode (no args), starts bot adapter + WebSocket client
 - UI: `src/ui/node_graph_view.rs` (main UI logic), `src/ui/graph_window.slint` (Slint UI definition), `src/ui/window_state.rs` (persistent window config), `src/ui/selection.rs` (node selection logic)
 - Database: `database/models/message_record.py` (SQLAlchemy model), `migrations/versions/` (alembic migrations), `alembic.ini` (migration config)
 - Module guides: `.github/copilot-instructions-{config,adapter,event,models,node,utils,message-store}.md`
+- Node graph JSON spec: `document/node-graph-json.md`
 
