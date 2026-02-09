@@ -1283,6 +1283,7 @@ export component NodeGraphWindow inherits Window {
     in property <bool> show_error_dialog: false;
     in property <string> error_dialog_message: "";
     in-out property <bool> menu_open: false;
+    in property <bool> show_in_window_menu: true;
     in property <bool> show_save_confirm: false;
     in property <string> save_confirm_message: "当前节点图未保存，是否保存？";
     callback save_confirm_save();
@@ -1336,7 +1337,7 @@ export component NodeGraphWindow inherits Window {
                 alignment: start;
 
                 // Square Settings Button
-                Rectangle {
+                if root.show_in_window_menu: Rectangle {
                     width: 32px;
                     height: 32px;
                     background: transparent;
@@ -1543,7 +1544,7 @@ export component NodeGraphWindow inherits Window {
         close => { root.hide_error(); }
     }
 
-    if root.menu_open: Rectangle {
+    if root.show_in_window_menu && root.menu_open: Rectangle {
         x: 0px;
         y: 32px;
         width: parent.width;

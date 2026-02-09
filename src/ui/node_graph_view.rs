@@ -19,6 +19,8 @@ use crate::ui::graph_window::{
 };
 use crate::ui::selection::{BoxSelection, SelectionState};
 use crate::ui::window_state::{apply_window_state, load_window_state, save_window_state, WindowState};
+#[cfg(target_os = "macos")]
+use crate::ui::macos_menu::{install_menu, MenuActions};
 
 const GRID_SIZE: f32 = 20.0;
 const NODE_WIDTH_CELLS: f32 = 10.0;
@@ -118,6 +120,9 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
 
     let ui = NodeGraphWindow::new()
         .map_err(|e| crate::error::Error::StringError(format!("UI error: {e}")))?;
+
+    #[cfg(target_os = "macos")]
+    ui.set_show_in_window_menu(false);
 
     if let Some(state) = load_window_state() {
         apply_window_state(&ui.window(), &state);
@@ -376,6 +381,55 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
             refresh_active_tab_ui(&ui, &tabs_guard, active_index);
         }
     });
+
+    #[cfg(target_os = "macos")]
+    {
+        let ui_weak = ui.as_weak();
+        slint::Timer::single_shot(std::time::Duration::from_millis(100), move || {
+            install_menu(MenuActions {
+                open: Box::new({
+                    let ui_weak = ui_weak.clone();
+                    move || {
+                        if let Some(ui) = ui_weak.upgrade() {
+                            ui.invoke_open_json();
+                        }
+                    }
+                }),
+                save: Box::new({
+                    let ui_weak = ui_weak.clone();
+                    move || {
+                        if let Some(ui) = ui_weak.upgrade() {
+                            ui.invoke_save_json();
+                        }
+                    }
+                }),
+                new_tab: Box::new({
+                    let ui_weak = ui_weak.clone();
+                    move || {
+                        if let Some(ui) = ui_weak.upgrade() {
+                            ui.invoke_new_tab();
+                        }
+                    }
+                }),
+                close_tab: Box::new({
+                    let ui_weak = ui_weak.clone();
+                    move || {
+                        if let Some(ui) = ui_weak.upgrade() {
+                            ui.invoke_close_tab();
+                        }
+                    }
+                }),
+                quit: Box::new({
+                    let ui_weak = ui_weak.clone();
+                    move || {
+                        if let Some(ui) = ui_weak.upgrade() {
+                            ui.invoke_close_tab();
+                        }
+                    }
+                }),
+            });
+        });
+    }
 
     let tabs_clone = Arc::clone(&tabs);
     let active_tab_clone = Arc::clone(&active_tab_index);
