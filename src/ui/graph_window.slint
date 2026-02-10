@@ -1394,7 +1394,7 @@ export component NodeGraphWindow inherits Window {
 
     VerticalLayout {
         // Menu bar area
-        Rectangle {
+        if root.show_in_window_menu : Rectangle {
             height: 24px;
             background: AppTheme.menu-bar-bg;
 
@@ -1404,7 +1404,7 @@ export component NodeGraphWindow inherits Window {
                 alignment: start;
 
                 // Windows-style menu bar item
-                if root.show_in_window_menu: MenuBarItem {
+                MenuBarItem {
                     text: "文件";
                     is_open: root.menu_open;
                     clicked => { root.menu_open = !root.menu_open; }
