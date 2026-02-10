@@ -121,7 +121,7 @@ macro_rules! register_node {
 
 /// Initialize all node types in the registry
 pub fn init_node_registry() -> Result<()> {
-    use crate::node::util_nodes::{ConditionalNode, JsonParserNode, PreviewStringNode, StringDataNode, PreviewMessageListNode};
+    use crate::node::util_nodes::{ConditionalNode, JsonParserNode, PreviewStringNode, StringDataNode, PreviewMessageListNode, MessageListDataNode};
     use crate::llm::llm_api::LLMAPINode;
     use crate::bot_adapter::node_impl::{BotAdapterNode, MessageSenderNode};
     use crate::bot_adapter::extract_message_from_event::ExtractMessageFromEventNode;
@@ -167,6 +167,14 @@ pub fn init_node_registry() -> Result<()> {
         "工具",
         "在节点卡片内预览消息列表",
         PreviewMessageListNode
+    );
+
+    register_node!(
+        "message_list_data",
+        "MessageList Data",
+        "数据",
+        "消息列表数据源，通过UI容器编辑器提供MessageList",
+        MessageListDataNode
     );
 
     // LLM nodes
@@ -306,7 +314,75 @@ fn json_to_data_value(json: &Value, target_type: &DataType) -> Option<DataValue>
         (Value::Bool(b), DataType::Boolean) => Some(DataValue::Boolean(*b)),
         
         (v, DataType::Json) => Some(DataValue::Json(v.clone())),
+
+        // MessageList inline value is stored as a JSON array:
+        // [ {"role": "user", "content": "..."}, ... ]
+        (Value::Array(items), DataType::MessageList) => {
+            use crate::llm::{Message, MessageRole};
+
+            fn parse_role(v: &Value) -> MessageRole {
+                // Case-insensitive; unknown values fall back to `user` (safer default for data source).
+                let s = v.as_str().unwrap_or("user").to_ascii_lowercase();
+                match s.as_str() {
+                    "system" => MessageRole::System,
+                    "assistant" => MessageRole::Assistant,
+                    "tool" => MessageRole::Tool,
+                    _ => MessageRole::User,
+                }
+            }
+
+            let mut msgs: Vec<Message> = Vec::with_capacity(items.len());
+            for item in items {
+                if let Value::Object(map) = item {
+                    let role = map.get("role").map(parse_role).unwrap_or(MessageRole::User);
+                    let content = match map.get("content") {
+                        Some(Value::String(s)) => Some(s.clone()),
+                        Some(Value::Null) | None => None,
+                        Some(other) => Some(other.to_string()),
+                    };
+
+                    msgs.push(Message {
+                        role,
+                        content,
+                        tool_calls: Vec::new(),
+                    });
+                }
+            }
+            Some(DataValue::MessageList(msgs))
+        }
         
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::json_to_data_value;
+    use crate::node::{DataType, DataValue};
+
+    #[test]
+    fn parse_message_list_inline_value() {
+        let json = serde_json::json!([
+            {"role": "user", "content": "hi"},
+            {"role": "ASSISTANT", "content": "hello"},
+            {"role": "weird", "content": null}
+        ]);
+
+        let val = json_to_data_value(&json, &DataType::MessageList)
+            .expect("should parse MessageList");
+
+        match val {
+            DataValue::MessageList(list) => {
+                assert_eq!(list.len(), 3);
+                assert_eq!(crate::llm::role_to_str(&list[0].role), "user");
+                assert_eq!(list[0].content.as_deref(), Some("hi"));
+                assert_eq!(crate::llm::role_to_str(&list[1].role), "assistant");
+                assert_eq!(list[1].content.as_deref(), Some("hello"));
+                // Unknown role falls back to user
+                assert_eq!(crate::llm::role_to_str(&list[2].role), "user");
+                assert_eq!(list[2].content, None);
+            }
+            _ => panic!("unexpected DataValue variant"),
+        }
     }
 }

@@ -15,6 +15,7 @@ impl NodeRenderer for StringDataRenderer {
         match inline_inputs.get(&key) {
             Some(InlinePortValue::Text(value)) => format!("{}", value),
             Some(InlinePortValue::Bool(value)) => format!("{}", value),
+            Some(InlinePortValue::Json(_)) => "(json)".to_string(),
             None => "(empty...)".to_string(),
         }
     }

@@ -60,6 +60,9 @@ fn build_inline_inputs_from_graph(graph: &NodeGraphDefinition) -> HashMap<String
                 serde_json::Value::Number(n) => {
                     map.insert(key, InlinePortValue::Text(n.to_string()));
                 }
+                serde_json::Value::Array(_) | serde_json::Value::Object(_) => {
+                    map.insert(key, InlinePortValue::Json(val.clone()));
+                }
                 _ => {}
             }
         }
@@ -1297,6 +1300,207 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
         }
     });
 
+    let tabs_clone = Arc::clone(&tabs);
+    let active_tab_clone = Arc::clone(&active_tab_index);
+    let ui_handle = ui.as_weak();
+    ui.on_message_list_add(move |node_id: SharedString| {
+        let mut tabs_guard = tabs_clone.lock().unwrap();
+        let active_index = *active_tab_clone.lock().unwrap();
+        if let Some(tab) = tabs_guard.get_mut(active_index) {
+            let mut items = get_message_list_inline(&tab.inline_inputs, node_id.as_str());
+            items.push(new_message_item("user", ""));
+            set_message_list_inline(&mut tab.inline_inputs, node_id.as_str(), items);
+            tab.is_dirty = true;
+            if let Some(ui) = ui_handle.upgrade() {
+                apply_graph_to_ui(
+                    &ui,
+                    &tab.graph,
+                    Some(tab_display_title(tab)),
+                    &tab.selection,
+                    &tab.inline_inputs,
+                );
+                update_tabs_ui(&ui, &tabs_guard, active_index);
+            }
+        }
+    });
+
+    let tabs_clone = Arc::clone(&tabs);
+    let active_tab_clone = Arc::clone(&active_tab_index);
+    let ui_handle = ui.as_weak();
+    ui.on_message_list_insert(move |node_id: SharedString, index: i32| {
+        let mut tabs_guard = tabs_clone.lock().unwrap();
+        let active_index = *active_tab_clone.lock().unwrap();
+        if let Some(tab) = tabs_guard.get_mut(active_index) {
+            let mut items = get_message_list_inline(&tab.inline_inputs, node_id.as_str());
+            let len = items.len();
+            let mut insert_at = if index < 0 { 0 } else { (index as usize).saturating_add(1) };
+            if insert_at > len {
+                insert_at = len;
+            }
+            items.insert(insert_at, new_message_item("user", ""));
+            set_message_list_inline(&mut tab.inline_inputs, node_id.as_str(), items);
+            tab.is_dirty = true;
+            if let Some(ui) = ui_handle.upgrade() {
+                apply_graph_to_ui(
+                    &ui,
+                    &tab.graph,
+                    Some(tab_display_title(tab)),
+                    &tab.selection,
+                    &tab.inline_inputs,
+                );
+                update_tabs_ui(&ui, &tabs_guard, active_index);
+            }
+        }
+    });
+
+    let tabs_clone = Arc::clone(&tabs);
+    let active_tab_clone = Arc::clone(&active_tab_index);
+    let ui_handle = ui.as_weak();
+    ui.on_message_list_delete(move |node_id: SharedString, index: i32| {
+        let mut tabs_guard = tabs_clone.lock().unwrap();
+        let active_index = *active_tab_clone.lock().unwrap();
+        if let Some(tab) = tabs_guard.get_mut(active_index) {
+            let mut items = get_message_list_inline(&tab.inline_inputs, node_id.as_str());
+            if index >= 0 {
+                let idx = index as usize;
+                if idx < items.len() {
+                    items.remove(idx);
+                }
+            }
+            set_message_list_inline(&mut tab.inline_inputs, node_id.as_str(), items);
+            tab.is_dirty = true;
+            if let Some(ui) = ui_handle.upgrade() {
+                apply_graph_to_ui(
+                    &ui,
+                    &tab.graph,
+                    Some(tab_display_title(tab)),
+                    &tab.selection,
+                    &tab.inline_inputs,
+                );
+                update_tabs_ui(&ui, &tabs_guard, active_index);
+            }
+        }
+    });
+
+    let tabs_clone = Arc::clone(&tabs);
+    let active_tab_clone = Arc::clone(&active_tab_index);
+    let ui_handle = ui.as_weak();
+    ui.on_message_list_move_up(move |node_id: SharedString, index: i32| {
+        let mut tabs_guard = tabs_clone.lock().unwrap();
+        let active_index = *active_tab_clone.lock().unwrap();
+        if let Some(tab) = tabs_guard.get_mut(active_index) {
+            let mut items = get_message_list_inline(&tab.inline_inputs, node_id.as_str());
+            if index > 0 {
+                let idx = index as usize;
+                if idx < items.len() {
+                    items.swap(idx - 1, idx);
+                }
+            }
+            set_message_list_inline(&mut tab.inline_inputs, node_id.as_str(), items);
+            tab.is_dirty = true;
+            if let Some(ui) = ui_handle.upgrade() {
+                apply_graph_to_ui(
+                    &ui,
+                    &tab.graph,
+                    Some(tab_display_title(tab)),
+                    &tab.selection,
+                    &tab.inline_inputs,
+                );
+                update_tabs_ui(&ui, &tabs_guard, active_index);
+            }
+        }
+    });
+
+    let tabs_clone = Arc::clone(&tabs);
+    let active_tab_clone = Arc::clone(&active_tab_index);
+    let ui_handle = ui.as_weak();
+    ui.on_message_list_move_down(move |node_id: SharedString, index: i32| {
+        let mut tabs_guard = tabs_clone.lock().unwrap();
+        let active_index = *active_tab_clone.lock().unwrap();
+        if let Some(tab) = tabs_guard.get_mut(active_index) {
+            let mut items = get_message_list_inline(&tab.inline_inputs, node_id.as_str());
+            if index >= 0 {
+                let idx = index as usize;
+                if idx + 1 < items.len() {
+                    items.swap(idx, idx + 1);
+                }
+            }
+            set_message_list_inline(&mut tab.inline_inputs, node_id.as_str(), items);
+            tab.is_dirty = true;
+            if let Some(ui) = ui_handle.upgrade() {
+                apply_graph_to_ui(
+                    &ui,
+                    &tab.graph,
+                    Some(tab_display_title(tab)),
+                    &tab.selection,
+                    &tab.inline_inputs,
+                );
+                update_tabs_ui(&ui, &tabs_guard, active_index);
+            }
+        }
+    });
+
+    let tabs_clone = Arc::clone(&tabs);
+    let active_tab_clone = Arc::clone(&active_tab_index);
+    let ui_handle = ui.as_weak();
+    ui.on_message_list_cycle_role(move |node_id: SharedString, index: i32| {
+        let mut tabs_guard = tabs_clone.lock().unwrap();
+        let active_index = *active_tab_clone.lock().unwrap();
+        if let Some(tab) = tabs_guard.get_mut(active_index) {
+            let mut items = get_message_list_inline(&tab.inline_inputs, node_id.as_str());
+            if index >= 0 {
+                let idx = index as usize;
+                if let Some(serde_json::Value::Object(map)) = items.get_mut(idx) {
+                    let current = map
+                        .get("role")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("user");
+                    map.insert(
+                        "role".to_string(),
+                        serde_json::Value::String(cycle_role(current).to_string()),
+                    );
+                }
+            }
+            set_message_list_inline(&mut tab.inline_inputs, node_id.as_str(), items);
+            tab.is_dirty = true;
+            if let Some(ui) = ui_handle.upgrade() {
+                apply_graph_to_ui(
+                    &ui,
+                    &tab.graph,
+                    Some(tab_display_title(tab)),
+                    &tab.selection,
+                    &tab.inline_inputs,
+                );
+                update_tabs_ui(&ui, &tabs_guard, active_index);
+            }
+        }
+    });
+
+    let tabs_clone = Arc::clone(&tabs);
+    let active_tab_clone = Arc::clone(&active_tab_index);
+    let ui_handle = ui.as_weak();
+    ui.on_message_list_set_content(move |node_id: SharedString, index: i32, value: SharedString| {
+        let mut tabs_guard = tabs_clone.lock().unwrap();
+        let active_index = *active_tab_clone.lock().unwrap();
+        if let Some(tab) = tabs_guard.get_mut(active_index) {
+            let mut items = get_message_list_inline(&tab.inline_inputs, node_id.as_str());
+            if index >= 0 {
+                let idx = index as usize;
+                if let Some(serde_json::Value::Object(map)) = items.get_mut(idx) {
+                    map.insert(
+                        "content".to_string(),
+                        serde_json::Value::String(value.to_string()),
+                    );
+                }
+            }
+            set_message_list_inline(&mut tab.inline_inputs, node_id.as_str(), items);
+            tab.is_dirty = true;
+            if let Some(ui) = ui_handle.upgrade() {
+                update_tabs_ui(&ui, &tabs_guard, active_index);
+            }
+        }
+    });
+
     let run_result = ui.run();
     if run_result.is_ok() {
         let state = WindowState::from_window(&ui.window());
@@ -1397,6 +1601,7 @@ fn apply_graph_to_ui(
                             let value = match inline_inputs.get(&key) {
                                 Some(InlinePortValue::Bool(v)) => *v,
                                 Some(InlinePortValue::Text(v)) => v.eq_ignore_ascii_case("true"),
+                                Some(InlinePortValue::Json(_)) => false,
                                 None => false,
                             };
                             (String::new(), value, true) // Boolean inputs always have a value (default false)
@@ -1408,10 +1613,18 @@ fn apply_graph_to_ui(
                             let value = match inline_inputs.get(&key) {
                                 Some(InlinePortValue::Text(v)) => v.clone(),
                                 Some(InlinePortValue::Bool(v)) => v.to_string(),
+                                Some(InlinePortValue::Json(_)) => String::new(),
                                 None => String::new(),
                             };
                             let has_val = !value.is_empty();
                             (value, false, has_val)
+                        }
+                        crate::node::DataType::MessageList => {
+                            let has_val = match inline_inputs.get(&key) {
+                                Some(InlinePortValue::Json(serde_json::Value::Array(arr))) => !arr.is_empty(),
+                                _ => false,
+                            };
+                            (String::new(), false, has_val)
                         }
                         _ => (String::new(), false, false),
                     };
@@ -1459,8 +1672,9 @@ fn apply_graph_to_ui(
                 String::new()
             };
 
-            // Get message list for preview_message_list nodes
-            let message_list = if node.node_type == "preview_message_list" {
+            // Get message list for preview_message_list nodes (from execution results)
+            // and for message_list_data nodes (from inline JSON editor state)
+            let message_list: Vec<MessageItemVm> = if node.node_type == "preview_message_list" {
                 use crate::ui::node_render::preview_message_list::get_message_list_data;
                 get_message_list_data(&node.id, &graph)
                     .into_iter()
@@ -1469,6 +1683,31 @@ fn apply_graph_to_ui(
                         content: msg.content.into(),
                     })
                     .collect()
+            } else if node.node_type == "message_list_data" {
+                let key = inline_port_key(&node.id, "messages");
+                match inline_inputs.get(&key) {
+                    Some(InlinePortValue::Json(serde_json::Value::Array(items))) => items
+                        .iter()
+                        .filter_map(|v| v.as_object())
+                        .map(|m| {
+                            let role = m
+                                .get("role")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("user")
+                                .to_string();
+                            let content = m
+                                .get("content")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .to_string();
+                            MessageItemVm {
+                                role: role.into(),
+                                content: content.into(),
+                            }
+                        })
+                        .collect(),
+                    _ => Vec::new(),
+                }
             } else {
                 Vec::new()
             };
@@ -1525,9 +1764,52 @@ fn apply_inline_inputs_to_graph(
                         node.inline_values
                             .insert(port.name.clone(), serde_json::Value::Bool(*b));
                     }
+                    InlinePortValue::Json(v) => {
+                        node.inline_values.insert(port.name.clone(), v.clone());
+                    }
                 }
             }
         }
+    }
+}
+
+fn message_list_key(node_id: &str) -> String {
+    inline_port_key(node_id, "messages")
+}
+
+fn get_message_list_inline(
+    inline_inputs: &HashMap<String, InlinePortValue>,
+    node_id: &str,
+) -> Vec<serde_json::Value> {
+    let key = message_list_key(node_id);
+    match inline_inputs.get(&key) {
+        Some(InlinePortValue::Json(serde_json::Value::Array(items))) => items.clone(),
+        _ => Vec::new(),
+    }
+}
+
+fn set_message_list_inline(
+    inline_inputs: &mut HashMap<String, InlinePortValue>,
+    node_id: &str,
+    items: Vec<serde_json::Value>,
+) {
+    let key = message_list_key(node_id);
+    inline_inputs.insert(key, InlinePortValue::Json(serde_json::Value::Array(items)));
+}
+
+fn new_message_item(role: &str, content: &str) -> serde_json::Value {
+    serde_json::json!({
+        "role": role,
+        "content": content,
+    })
+}
+
+fn cycle_role(current: &str) -> &'static str {
+    match current {
+        "user" => "assistant",
+        "assistant" => "system",
+        "system" => "tool",
+        _ => "user",
     }
 }
 

@@ -93,6 +93,11 @@ pub struct PreviewMessageListNode {
     name: String,
 }
 
+pub struct MessageListDataNode {
+    id: String,
+    name: String,
+}
+
 impl JsonParserNode {
     pub fn new(id: impl Into<String>, name: impl Into<String>) -> Self {
         Self {
@@ -121,6 +126,15 @@ impl StringDataNode {
 }
 
 impl PreviewMessageListNode {
+    pub fn new(id: impl Into<String>, name: impl Into<String>) -> Self {
+        Self {
+            id: id.into(),
+            name: name.into(),
+        }
+    }
+}
+
+impl MessageListDataNode {
     pub fn new(id: impl Into<String>, name: impl Into<String>) -> Self {
         Self {
             id: id.into(),
@@ -267,6 +281,45 @@ impl Node for PreviewMessageListNode {
         if let Some(value) = inputs.get("messages") {
             outputs.insert("messages".to_string(), value.clone());
         }
+
+        self.validate_outputs(&outputs)?;
+        Ok(outputs)
+    }
+}
+
+impl Node for MessageListDataNode {
+    fn id(&self) -> &str {
+        &self.id
+    }
+
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    fn description(&self) -> Option<&str> {
+        Some("MessageList data source with inline UI editor")
+    }
+
+    // We intentionally keep a MessageList *input* port so inline_values can persist into the
+    // graph JSON and be parsed into DataValue::MessageList by the registry.
+    // The port is optional to avoid validation errors when the node is created before editing.
+    node_input![
+        port! { name = "messages", ty = MessageList, desc = "MessageList provided by UI inline editor", optional },
+    ];
+
+    node_output![
+        port! { name = "messages", ty = MessageList, desc = "Output MessageList from UI data source" },
+    ];
+
+    fn execute(&mut self, inputs: HashMap<String, DataValue>) -> Result<HashMap<String, DataValue>> {
+        self.validate_inputs(&inputs)?;
+
+        let mut outputs = HashMap::new();
+        let value = match inputs.get("messages") {
+            Some(DataValue::MessageList(list)) => DataValue::MessageList(list.clone()),
+            _ => DataValue::MessageList(Vec::new()),
+        };
+        outputs.insert("messages".to_string(), value);
 
         self.validate_outputs(&outputs)?;
         Ok(outputs)

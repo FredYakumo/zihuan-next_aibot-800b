@@ -294,6 +294,13 @@ component NodeItem inherits Rectangle {
     callback node_clicked(string);
     callback inline_port_text_changed(string, string, string);
     callback inline_port_bool_changed(string, string, bool);
+    callback message_list_add(string);
+    callback message_list_insert(string, int);
+    callback message_list_delete(string, int);
+    callback message_list_move_up(string, int);
+    callback message_list_move_down(string, int);
+    callback message_list_cycle_role(string, int);
+    callback message_list_set_content(string, int, string);
     callback node_resized(float, float);
     callback node_resize_finished(float, float);
 
@@ -438,12 +445,258 @@ component NodeItem inherits Rectangle {
         }
     }
 
+    // Special UI for message_list_data nodes: table-style editor
+    if root.node_type == "message_list_data": Rectangle {
+        x: (grid_size * 0.5) * 1px;
+        y: (grid_size * 1.1) * 1px;
+        width: root.width - (grid_size * 1.0) * 1px;
+        height: min((grid_size * 7.0) * 1px, root.height - (grid_size * 2.0) * 1px);
+        background: transparent;
+
+        VerticalLayout {
+            padding: 4px;
+            spacing: 4px;
+
+            // Header row with add button
+            HorizontalLayout {
+                spacing: 6px;
+                alignment: start;
+
+                CjkText {
+                    text: "messages";
+                    color: AppTheme.text-secondary;
+                    font-size: 10px;
+                    vertical-alignment: center;
+                }
+
+                Rectangle {
+                    width: 18px;
+                    height: 18px;
+                    background: AppTheme.primary;
+                    border-radius: 4px;
+
+                    CjkText {
+                        text: "+";
+                        color: AppTheme.text-on-primary;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        font-size: 12px;
+                        font-weight: 700;
+                    }
+
+                    TouchArea {
+                        clicked => {
+                            root.message_list_add(root.node_id);
+                        }
+                    }
+                }
+            }
+
+            // Table header
+            Rectangle {
+                height: 18px;
+                background: AppTheme.node-bg-pressed;
+                border-radius: 4px;
+
+                HorizontalLayout {
+                    padding: 4px;
+                    spacing: 6px;
+
+                    CjkText {
+                        text: "role";
+                        color: AppTheme.text-muted;
+                        font-size: 9px;
+                        width: 60px;
+                    }
+
+                    CjkText {
+                        text: "content";
+                        color: AppTheme.text-muted;
+                        font-size: 9px;
+                        horizontal-stretch: 1;
+                    }
+                }
+            }
+
+            ScrollView {
+                height: min((grid_size * 5.0) * 1px, root.height - (grid_size * 3.0) * 1px);
+
+                VerticalBox {
+                    spacing: 4px;
+                    padding: 2px;
+
+                    for msg[idx] in root.message_list: Rectangle {
+                        height: max((grid_size * 1.6) * 1px, 34px);
+                        border-radius: 6px;
+                        border-width: 1px;
+                        border-color: AppTheme.border;
+                        background: AppTheme.node-bg;
+
+                        HorizontalLayout {
+                            padding: 4px;
+                            spacing: 6px;
+
+                            // Role cell (click to cycle)
+                            Rectangle {
+                                width: 60px;
+                                height: parent.height - 8px;
+                                border-radius: 4px;
+                                background: msg.role == "system" ? #2C3E50 :
+                                           msg.role == "user" ? #3498DB :
+                                           msg.role == "assistant" ? #27AE60 :
+                                           #E67E22;
+                                border-width: 1px;
+                                border-color: msg.role == "system" ? #34495E :
+                                             msg.role == "user" ? #2980B9 :
+                                             msg.role == "assistant" ? #229954 :
+                                             #D35400;
+
+                                CjkText {
+                                    text: msg.role == "system" ? "系统" :
+                                          msg.role == "user" ? "用户" :
+                                          msg.role == "assistant" ? "助手" :
+                                          "工具";
+                                    color: #FFFFFF;
+                                    font-size: 9px;
+                                    font-weight: 700;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                }
+
+                                TouchArea {
+                                    clicked => {
+                                        root.message_list_cycle_role(root.node_id, idx);
+                                    }
+                                }
+                            }
+
+                            // Content cell (editable)
+                            Rectangle {
+                                height: parent.height - 8px;
+                                border-radius: 4px;
+                                background: AppTheme.node-bg-pressed;
+                                border-width: 1px;
+                                border-color: AppTheme.border;
+                                horizontal-stretch: 1;
+
+                                HorizontalLayout {
+                                    padding: 2px;
+                                    spacing: 4px;
+
+                                    LineEdit {
+                                        text: msg.content;
+                                        placeholder-text: "输入内容";
+                                        height: parent.height - 4px;
+                                        horizontal-stretch: 1;
+                                        edited(text) => {
+                                            root.message_list_set_content(root.node_id, idx, text);
+                                        }
+                                    }
+
+                                    // Row actions
+                                    HorizontalLayout {
+                                        spacing: 2px;
+
+                                        Rectangle {
+                                            width: 16px;
+                                            height: 16px;
+                                            border-radius: 3px;
+                                            background: AppTheme.primary-muted;
+
+                                            CjkText {
+                                                text: "↑";
+                                                color: AppTheme.text-primary;
+                                                font-size: 9px;
+                                                horizontal-alignment: center;
+                                                vertical-alignment: center;
+                                            }
+
+                                            TouchArea {
+                                                clicked => {
+                                                    root.message_list_move_up(root.node_id, idx);
+                                                }
+                                            }
+                                        }
+
+                                        Rectangle {
+                                            width: 16px;
+                                            height: 16px;
+                                            border-radius: 3px;
+                                            background: AppTheme.primary-muted;
+
+                                            CjkText {
+                                                text: "↓";
+                                                color: AppTheme.text-primary;
+                                                font-size: 9px;
+                                                horizontal-alignment: center;
+                                                vertical-alignment: center;
+                                            }
+
+                                            TouchArea {
+                                                clicked => {
+                                                    root.message_list_move_down(root.node_id, idx);
+                                                }
+                                            }
+                                        }
+
+                                        Rectangle {
+                                            width: 16px;
+                                            height: 16px;
+                                            border-radius: 3px;
+                                            background: AppTheme.primary-muted;
+
+                                            CjkText {
+                                                text: "+";
+                                                color: AppTheme.text-primary;
+                                                font-size: 9px;
+                                                horizontal-alignment: center;
+                                                vertical-alignment: center;
+                                            }
+
+                                            TouchArea {
+                                                clicked => {
+                                                    root.message_list_insert(root.node_id, idx);
+                                                }
+                                            }
+                                        }
+
+                                        Rectangle {
+                                            width: 16px;
+                                            height: 16px;
+                                            border-radius: 3px;
+                                            background: AppTheme.danger-bg;
+
+                                            CjkText {
+                                                text: "×";
+                                                color: AppTheme.text-primary;
+                                                font-size: 10px;
+                                                horizontal-alignment: center;
+                                                vertical-alignment: center;
+                                            }
+
+                                            TouchArea {
+                                                clicked => {
+                                                    root.message_list_delete(root.node_id, idx);
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     for port[i] in input_ports: Rectangle {
         x: (grid_size * 0.2) * 1px;
         y: (grid_size * header_rows + i * grid_size + grid_size * 0.2) * 1px;
         width: (grid_size * 0.6) * 1px;
         height: (grid_size * 0.6) * 1px;
         border-radius: (grid_size * 0.3) * 1px;
+        visible: root.node_type != "message_list_data";
         background: (port.is_connected || port.has_value) ? AppTheme.primary-muted : (port.is_required ? AppTheme.danger-bg : AppTheme.node-port-bg);
         border-width: 1px;
         border-color: (port.is_connected || port.has_value) ? AppTheme.primary : (port.is_required ? AppTheme.danger : AppTheme.node-port-border);
@@ -462,6 +715,7 @@ component NodeItem inherits Rectangle {
         y: (grid_size * header_rows + i * grid_size) * 1px;
         width: root.width - (grid_size * 2.5) * 1px;
         height: (grid_size) * 1px;
+        visible: root.node_type != "message_list_data";
 
         HorizontalLayout {
             alignment: start;
@@ -631,6 +885,13 @@ component GraphCanvas inherits Rectangle {
     callback box_selection_end();
     callback inline_port_text_changed(string, string, string);
     callback inline_port_bool_changed(string, string, bool);
+    callback message_list_add(string);
+    callback message_list_insert(string, int);
+    callback message_list_delete(string, int);
+    callback message_list_move_up(string, int);
+    callback message_list_move_down(string, int);
+    callback message_list_cycle_role(string, int);
+    callback message_list_set_content(string, int, string);
     callback node_resized(string, float, float);
     callback node_resize_finished(string, float, float);
 
@@ -856,6 +1117,34 @@ component GraphCanvas inherits Rectangle {
 
         inline_port_bool_changed(node_id, port_name, value) => {
             root.inline_port_bool_changed(node_id, port_name, value);
+        }
+
+        message_list_add(node_id) => {
+            root.message_list_add(node_id);
+        }
+
+        message_list_insert(node_id, index) => {
+            root.message_list_insert(node_id, index);
+        }
+
+        message_list_delete(node_id, index) => {
+            root.message_list_delete(node_id, index);
+        }
+
+        message_list_move_up(node_id, index) => {
+            root.message_list_move_up(node_id, index);
+        }
+
+        message_list_move_down(node_id, index) => {
+            root.message_list_move_down(node_id, index);
+        }
+
+        message_list_cycle_role(node_id, index) => {
+            root.message_list_cycle_role(node_id, index);
+        }
+
+        message_list_set_content(node_id, index, value) => {
+            root.message_list_set_content(node_id, index, value);
         }
 
         node_resized(width, height) => {
@@ -1386,6 +1675,13 @@ export component NodeGraphWindow inherits Window {
     callback box_selection_end();
     callback inline_port_text_changed(string, string, string);
     callback inline_port_bool_changed(string, string, bool);
+    callback message_list_add(string);
+    callback message_list_insert(string, int);
+    callback message_list_delete(string, int);
+    callback message_list_move_up(string, int);
+    callback message_list_move_down(string, int);
+    callback message_list_cycle_role(string, int);
+    callback message_list_set_content(string, int, string);
     callback node_resized(string, float, float);
     callback node_resize_finished(string, float, float);
 
@@ -1529,6 +1825,34 @@ export component NodeGraphWindow inherits Window {
 
                 inline_port_bool_changed(node_id, port_name, value) => {
                     root.inline_port_bool_changed(node_id, port_name, value);
+                }
+
+                message_list_add(node_id) => {
+                    root.message_list_add(node_id);
+                }
+
+                message_list_insert(node_id, index) => {
+                    root.message_list_insert(node_id, index);
+                }
+
+                message_list_delete(node_id, index) => {
+                    root.message_list_delete(node_id, index);
+                }
+
+                message_list_move_up(node_id, index) => {
+                    root.message_list_move_up(node_id, index);
+                }
+
+                message_list_move_down(node_id, index) => {
+                    root.message_list_move_down(node_id, index);
+                }
+
+                message_list_cycle_role(node_id, index) => {
+                    root.message_list_cycle_role(node_id, index);
+                }
+
+                message_list_set_content(node_id, index, value) => {
+                    root.message_list_set_content(node_id, index, value);
                 }
 
                 node_resized(node_id, width, height) => {

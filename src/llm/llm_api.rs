@@ -192,8 +192,10 @@ impl LLMBase for LLMAPI {
         // Make the request and handle response
         match request.send() {
             Ok(response) => {
-                if response.status().is_success() {
-                    match response.json::<Value>() {
+                let status = response.status();
+                let response_text = response.text().unwrap_or_else(|_| "Failed to read response".to_string());
+                if status.is_success() {
+                    match serde_json::from_str::<Value>(&response_text) {
                         Ok(api_resp) => {
                             if let Some(msg) = Self::parse_api_message(&api_resp) {
                                 debug!("Successfully parsed API response");
@@ -208,7 +210,7 @@ impl LLMBase for LLMAPI {
                             }
                         }
                         Err(e) => {
-                            error!("Failed to parse API response: {}", e);
+                            error!("Failed to parse API response: {}, original response: {:?}", e, &response_text);
                             Message {
                                 role: MessageRole::Assistant,
                                 content: Some(format!("Error: Failed to parse response - {}", e)),
@@ -217,9 +219,7 @@ impl LLMBase for LLMAPI {
                         }
                     }
                 } else {
-                    let status = response.status();
-                    let error_text = response.text().unwrap_or_else(|_| "Unknown error".to_string());
-                    error!("API request failed with status {}: {}", status, error_text);
+                    error!("API request failed with status {}: {}", status, response_text);
                     Message {
                         role: MessageRole::Assistant,
                         content: Some(format!("Error: API request failed with status {}", status)),

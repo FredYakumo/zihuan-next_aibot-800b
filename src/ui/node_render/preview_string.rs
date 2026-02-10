@@ -24,6 +24,10 @@ impl NodeRenderer for PreviewStringRenderer {
             return s.clone();
         }
 
+        if let Some(InlinePortValue::Json(_)) = inline_inputs.get(&key) {
+            return "(json)".to_string();
+        }
+
         String::new()
     }
     

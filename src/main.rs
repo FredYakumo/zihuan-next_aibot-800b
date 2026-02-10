@@ -29,8 +29,7 @@ struct Args {
     no_gui: bool,
 }
 
-#[tokio::main]
-async fn main() {
+fn main() {
     // Initialize logging using LogUtil
     LogUtil::init_with_logger(&BASE_LOG).expect("Failed to initialize logger");
 
@@ -57,7 +56,7 @@ async fn main() {
         info!("加载节点图文件: {}", graph_path);
         match node::load_graph_definition_from_json(&graph_path) {
             Ok(definition) => {
-                if let Err(e) = execute_node_graph(definition).await {
+                if let Err(e) = execute_node_graph(definition) {
                     error!("节点图执行失败: {}", e);
                 }
             }
@@ -91,7 +90,7 @@ async fn main() {
 }
 
 /// Execute a node graph loaded from JSON definition
-async fn execute_node_graph(definition: node::NodeGraphDefinition) -> Result<(), Box<dyn std::error::Error>> {
+fn execute_node_graph(definition: node::NodeGraphDefinition) -> Result<(), Box<dyn std::error::Error>> {
     info!("构建节点图");
     let mut graph = node::registry::build_node_graph_from_definition(&definition)?;
 
