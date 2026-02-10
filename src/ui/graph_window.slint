@@ -476,11 +476,12 @@ component NodeItem inherits Rectangle {
                 horizontal-stretch: 0;
             }
 
-            if (!port.is_connected && (port.data_type == "String" || port.data_type == "Integer" || port.data_type == "Float")): LineEdit {
+            if (!port.is_connected && (port.data_type == "String" || port.data_type == "Integer" || port.data_type == "Float" || port.data_type == "Password")): LineEdit {
                 width: min(parent.width * 0.5, 120px);
                 height: (grid_size * 0.8) * 1px;
                 text: port.inline_text;
                 placeholder-text: port.data_type;
+                input-type: port.data_type == "Password" ? password : text;
                 edited(text) => {
                     root.inline_port_text_changed(root.node_id, port.name, text);
                 }

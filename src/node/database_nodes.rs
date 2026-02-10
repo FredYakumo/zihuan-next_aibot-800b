@@ -1,6 +1,6 @@
 use crate::error::Result;
 use crate::node::data_value::{RedisConfig, MySqlConfig};
-use crate::node::{DataType, DataValue, Node, Port};
+use crate::node::{node_input, node_output, DataType, DataValue, Node, Port};
 use crate::config::pct_encode;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -33,33 +33,18 @@ impl Node for RedisNode {
         Some("Redis连接配置 - 构建Redis连接URL并输出引用")
     }
 
-    fn input_ports(&self) -> Vec<Port> {
-        vec![
-            Port::new("redis_host", DataType::String)
-                .with_description("Redis主机地址"),
-            Port::new("redis_port", DataType::Integer)
-                .with_description("Redis端口号"),
-            Port::new("redis_db", DataType::Integer)
-                .with_description("Redis数据库编号 (默认: 0)")
-                .optional(),
-            Port::new("redis_password", DataType::String)
-                .with_description("Redis密码")
-                .optional(),
-            Port::new("reconnect_max_attempts", DataType::Integer)
-                .with_description("最大重连次数 (默认: 3)")
-                .optional(),
-            Port::new("reconnect_interval_secs", DataType::Integer)
-                .with_description("重连间隔秒数 (默认: 60)")
-                .optional(),
-        ]
-    }
+    node_input![
+        port! { name = "redis_host", ty = String, desc = "Redis主机地址" },
+        port! { name = "redis_port", ty = Integer, desc = "Redis端口号" },
+        port! { name = "redis_db", ty = Integer, desc = "Redis数据库编号 (默认: 0)", optional },
+        port! { name = "redis_password", ty = String, desc = "Redis密码", optional },
+        port! { name = "reconnect_max_attempts", ty = Integer, desc = "最大重连次数 (默认: 3)", optional },
+        port! { name = "reconnect_interval_secs", ty = Integer, desc = "重连间隔秒数 (默认: 60)", optional },
+    ];
 
-    fn output_ports(&self) -> Vec<Port> {
-        vec![
-            Port::new("redis_ref", DataType::RedisRef)
-                .with_description("Redis连接配置引用"),
-        ]
-    }
+    node_output![
+        port! { name = "redis_ref", ty = RedisRef, desc = "Redis连接配置引用" },
+    ];
 
     fn execute(&mut self, inputs: HashMap<String, DataValue>) -> Result<HashMap<String, DataValue>> {
         // Extract required parameters
@@ -148,33 +133,19 @@ impl Node for MySqlNode {
         Some("MySQL连接配置 - 构建MySQL连接URL并输出引用")
     }
 
-    fn input_ports(&self) -> Vec<Port> {
-        vec![
-            Port::new("mysql_host", DataType::String)
-                .with_description("MySQL主机地址"),
-            Port::new("mysql_port", DataType::Integer)
-                .with_description("MySQL端口号"),
-            Port::new("mysql_user", DataType::String)
-                .with_description("MySQL用户名"),
-            Port::new("mysql_password", DataType::String)
-                .with_description("MySQL密码"),
-            Port::new("mysql_database", DataType::String)
-                .with_description("MySQL数据库名"),
-            Port::new("reconnect_max_attempts", DataType::Integer)
-                .with_description("最大重连次数 (默认: 3)")
-                .optional(),
-            Port::new("reconnect_interval_secs", DataType::Integer)
-                .with_description("重连间隔秒数 (默认: 60)")
-                .optional(),
-        ]
-    }
+    node_input![
+        port! { name = "mysql_host", ty = String, desc = "MySQL主机地址" },
+        port! { name = "mysql_port", ty = Integer, desc = "MySQL端口号" },
+        port! { name = "mysql_user", ty = String, desc = "MySQL用户名" },
+        port! { name = "mysql_password", ty = String, desc = "MySQL密码" },
+        port! { name = "mysql_database", ty = String, desc = "MySQL数据库名" },
+        port! { name = "reconnect_max_attempts", ty = Integer, desc = "最大重连次数 (默认: 3)", optional },
+        port! { name = "reconnect_interval_secs", ty = Integer, desc = "重连间隔秒数 (默认: 60)", optional },
+    ];
 
-    fn output_ports(&self) -> Vec<Port> {
-        vec![
-            Port::new("mysql_ref", DataType::MySqlRef)
-                .with_description("MySQL连接配置引用"),
-        ]
-    }
+    node_output![
+        port! { name = "mysql_ref", ty = MySqlRef, desc = "MySQL连接配置引用" },
+    ];
 
     fn execute(&mut self, inputs: HashMap<String, DataValue>) -> Result<HashMap<String, DataValue>> {
         // Extract required parameters

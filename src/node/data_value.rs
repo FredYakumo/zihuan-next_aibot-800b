@@ -38,7 +38,7 @@ pub enum DataType {
     BotAdapterRef,
     RedisRef,
     MySqlRef,
-    
+    Password,
     Custom(String),
 }
 
@@ -58,6 +58,7 @@ impl fmt::Display for DataType {
             DataType::BotAdapterRef => write!(f, "BotAdapterRef"),
             DataType::RedisRef => write!(f, "RedisRef"),
             DataType::MySqlRef => write!(f, "MySqlRef"),
+            DataType::Password => write!(f, "Password"),
             DataType::Custom(name) => write!(f, "Custom({})", name),
         }
     }
@@ -79,6 +80,7 @@ pub enum DataValue {
     BotAdapterRef(SharedBotAdapter),
     RedisRef(Arc<RedisConfig>),
     MySqlRef(Arc<MySqlConfig>),
+    Password(String),
 }
 
 impl DataValue {
@@ -103,6 +105,7 @@ impl DataValue {
             DataValue::BotAdapterRef(_) => DataType::BotAdapterRef,
             DataValue::RedisRef(_) => DataType::RedisRef,
             DataValue::MySqlRef(_) => DataType::MySqlRef,
+            DataValue::Password(_) => DataType::Password,
         }
     }
 
@@ -148,6 +151,7 @@ impl DataValue {
                     .collect();
                 Value::Array(tool_defs)
             }
+            DataValue::Password(value) => Value::String(value.clone()),
             DataValue::BotAdapterRef(_) => Value::String("BotAdapterRef".to_string()),
             DataValue::RedisRef(config) => serde_json::json!({
                 "type": "RedisRef",
@@ -181,6 +185,7 @@ impl fmt::Debug for DataValue {
             DataValue::BotAdapterRef(_) => f.debug_tuple("BotAdapterRef").finish(),
             DataValue::RedisRef(config) => f.debug_tuple("RedisRef").field(config).finish(),
             DataValue::MySqlRef(config) => f.debug_tuple("MySqlRef").field(config).finish(),
+            DataValue::Password(value) => f.debug_tuple("Password").field(value).finish(),
         }
     }
 }

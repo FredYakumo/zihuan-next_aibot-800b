@@ -287,6 +287,7 @@ pub fn build_node_graph_from_definition(
 fn json_to_data_value(json: &Value, target_type: &DataType) -> Option<DataValue> {
     match (json, target_type) {
         (Value::String(s), DataType::String) => Some(DataValue::String(s.clone())),
+        (Value::String(s), DataType::Password) => Some(DataValue::Password(s.clone())),
         (Value::String(s), DataType::Boolean) => {
              if s == "true" { Some(DataValue::Boolean(true)) }
              else if s == "false" { Some(DataValue::Boolean(false)) }

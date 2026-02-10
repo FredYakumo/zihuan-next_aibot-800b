@@ -56,6 +56,8 @@ pub mod message_nodes;
 #[allow(unused_imports)]
 pub use data_value::{DataType, DataValue};
 #[allow(unused_imports)]
+pub use node_macros::{node_input, node_output};
+#[allow(unused_imports)]
 pub use graph_io::{
     NodeGraphDefinition,
     NodeDefinition,

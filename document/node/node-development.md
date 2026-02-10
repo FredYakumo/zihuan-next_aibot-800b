@@ -25,6 +25,7 @@ This guide covers the full lifecycle of creating, registering, and distributing 
   - [Data Types and Validation](#data-types-and-validation)
     - [Available `DataType` variants](#available-datatype-variants)
     - [Creating a Port](#creating-a-port)
+    - [Defining ports with macros](#defining-ports-with-macros)
     - [Type Validation](#type-validation)
   - [Built-in Node Types](#built-in-node-types)
   - [Testing Your Node](#testing-your-node)
@@ -349,6 +350,36 @@ Port::new("input_name", DataType::String)
     .with_description("Help text")
     .with_required(true)  // or .optional() for false
 ```
+
+### Defining ports with macros
+
+To reduce boilerplate when writing many nodes, you can define ports declaratively inside your `impl Node` using `node_input!` / `node_output!`.
+
+```rust
+use crate::node::{DataValue, Node, Port, DataType, node_input, node_output};
+
+impl Node for MyNode {
+    // ... id(), name(), description() ...
+
+    node_input![
+        port!{name="text", type=String, desc="Input text"},
+        port!{name="times", type=Integer, desc="Repeat count", optional}
+    ];
+
+    node_output![
+        port!{name="result", type=String, desc="Output"}
+    ];
+
+    fn execute(&mut self, inputs: HashMap<String, DataValue>) -> Result<HashMap<String, DataValue>> {
+        // ...
+    }
+}
+```
+
+Notes:
+- `type=...` supports both short forms (e.g. `String`, `Integer`) and explicit paths (e.g. `DataType::String`).
+- `optional` can be used as a flag (`optional`) or as a boolean (`optional=true`).
+- When using `[]` delimiters (as above), the macro invocation must end with a semicolon because it expands to items.
 
 ### Type Validation
 

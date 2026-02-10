@@ -71,6 +71,10 @@ cargo run  # In default mode (no args), starts bot adapter + WebSocket client
 
 ## Extending the bot
 - **New node type**: Implement `Node` trait (define `id()`, `name()`, `input_ports()`, `output_ports()`, `execute()`). For event sources, override `node_type() -> NodeType::EventProducer` and implement `on_start()/on_update()/on_cleanup()`. See `ConditionalNode` (util_nodes.rs) for minimal example, `MessageEventToStringNode` (bot_adapter/) for event handling.
+- **Port definition macros**: Inside `impl Node`, you may use `node_input!` / `node_output!` to generate `input_ports()` / `output_ports()`:
+  - `node_input![ port!{name="text", type=String, desc="..."}, port!{name="x", type=Integer, optional} ];`
+  - `node_output![ port!{name="result", type=String, desc="..."} ];`
+  - Note: using `[]` requires a trailing `;` because these macros expand to items.
 - **New platform**: Add handler in `src/bot_adapter/event.rs`, register in `BotAdapter::new()`, extend `MessageType` enum in `src/bot_adapter/models/event_model.rs`.
 - **Node registry**: Add new node types to `src/node/registry.rs` for discoverability in GUI. Register with `NODE_REGISTRY.lock().unwrap().register(...)` during initialization.
 - **Configuration changes**: Modify `Config` struct fields in `src/config.rs`, update `load_config()` priority logic, document in `config.yaml.example`.

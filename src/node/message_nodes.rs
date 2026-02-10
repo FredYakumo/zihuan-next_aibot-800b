@@ -1,5 +1,5 @@
 use crate::error::Result;
-use crate::node::{DataType, DataValue, Node, Port, NodeType};
+use crate::node::{node_input, node_output, DataType, DataValue, Node, Port, NodeType};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex as TokioMutex;
@@ -36,23 +36,15 @@ impl Node for MessageMySQLPersistenceNode {
         Some("消息MySQL持久化 - 将MessageEvent存储到MySQL数据库")
     }
 
-    fn input_ports(&self) -> Vec<Port> {
-        vec![
-            Port::new("message_event", DataType::MessageEvent)
-                .with_description("消息事件"),
-            Port::new("mysql_ref", DataType::MySqlRef)
-                .with_description("MySQL连接配置引用"),
-        ]
-    }
+    node_input![
+        port! { name = "message_event", ty = MessageEvent, desc = "消息事件" },
+        port! { name = "mysql_ref", ty = MySqlRef, desc = "MySQL连接配置引用" },
+    ];
 
-    fn output_ports(&self) -> Vec<Port> {
-        vec![
-            Port::new("success", DataType::Boolean)
-                .with_description("消息是否存储成功"),
-            Port::new("message_event", DataType::MessageEvent)
-                .with_description("传递输入的消息事件"),
-        ]
-    }
+    node_output![
+        port! { name = "success", ty = Boolean, desc = "消息是否存储成功" },
+        port! { name = "message_event", ty = MessageEvent, desc = "传递输入的消息事件" },
+    ];
 
     fn execute(&mut self, inputs: HashMap<String, DataValue>) -> Result<HashMap<String, DataValue>> {
         // Extract message event
@@ -112,24 +104,15 @@ impl Node for MessageCacheNode {
         Some("消息缓存 - 将MessageEvent缓存到内存或Redis")
     }
 
-    fn input_ports(&self) -> Vec<Port> {
-        vec![
-            Port::new("message_event", DataType::MessageEvent)
-                .with_description("消息事件"),
-            Port::new("redis_ref", DataType::RedisRef)
-                .with_description("可选：Redis连接配置引用（若不提供则使用内存缓存）")
-                .optional(),
-        ]
-    }
+    node_input![
+        port! { name = "message_event", ty = MessageEvent, desc = "消息事件" },
+        port! { name = "redis_ref", ty = RedisRef, desc = "可选：Redis连接配置引用（若不提供则使用内存缓存）", optional },
+    ];
 
-    fn output_ports(&self) -> Vec<Port> {
-        vec![
-            Port::new("success", DataType::Boolean)
-                .with_description("消息是否缓存成功"),
-            Port::new("message_event", DataType::MessageEvent)
-                .with_description("传递输入的消息事件"),
-        ]
-    }
+    node_output![
+        port! { name = "success", ty = Boolean, desc = "消息是否缓存成功" },
+        port! { name = "message_event", ty = MessageEvent, desc = "传递输入的消息事件" },
+    ];
 
     fn execute(&mut self, inputs: HashMap<String, DataValue>) -> Result<HashMap<String, DataValue>> {
         // Extract message event

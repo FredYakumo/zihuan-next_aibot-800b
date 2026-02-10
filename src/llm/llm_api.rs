@@ -91,7 +91,6 @@ impl LLMAPI {
             .unwrap_or_default()
     }
 
-    /// Parse API response and extract message
     fn parse_api_message(api_resp: &Value) -> Option<Message> {
         let choices = api_resp.get("choices")?.as_array()?;
         let choice = choices.first()?;
@@ -430,7 +429,7 @@ mod tests {
 
 // ==================== Node Implementation ====================
 
-use crate::node::{Node, Port, DataType, DataValue};
+use crate::node::{node_input, node_output, DataType, DataValue, Node, Port};
 use crate::error::Result;
 use std::collections::HashMap;
 
@@ -462,27 +461,17 @@ impl Node for LLMAPINode {
         Some("LLM API调用节点 - 通过输入端口配置并调用语言模型API")
     }
 
-    fn input_ports(&self) -> Vec<Port> {
-        vec![
-            Port::new("messages", DataType::MessageList)
-                .with_description("输入的消息列表，包含系统消息和用户消息"),
-            Port::new("model_name", DataType::String)
-                .with_description("模型名称，例如: gpt-4, deepseek-chat"),
-            Port::new("api_endpoint", DataType::String)
-                .with_description("API端点URL，例如: https://api.openai.com/v1/chat/completions"),
-            Port::new("api_key", DataType::String)
-                .with_description("API密钥 (可选，某些本地模型不需要)"),
-            Port::new("timeout_secs", DataType::Integer)
-                .with_description("超时秒数 (可选，默认120秒)"),
-        ]
-    }
+    node_input![
+        port! { name = "messages", ty = MessageList, desc = "输入的消息列表，包含系统消息和用户消息" },
+        port! { name = "model_name", ty = String, desc = "模型名称，例如: gpt-4, deepseek-chat" },
+        port! { name = "api_endpoint", ty = String, desc = "API端点URL，例如: https://api.openai.com/v1/chat/completions" },
+        port! { name = "api_key", ty = Password, desc = "API密钥 (可选，某些本地模型不需要)" },
+        port! { name = "timeout_secs", ty = Integer, desc = "超时秒数 (可选，默认120秒)" },
+    ];
 
-    fn output_ports(&self) -> Vec<Port> {
-        vec![
-            Port::new("response", DataType::MessageList)
-                .with_description("LLM返回的消息列表，包含语言模型的回复"),        
-        ]
-    }
+    node_output![
+        port! { name = "response", ty = MessageList, desc = "LLM返回的消息列表，包含语言模型的回复" },
+    ];
 
     fn execute(&mut self, inputs: HashMap<String, DataValue>) -> Result<HashMap<String, DataValue>> {
         self.validate_inputs(&inputs)?;
@@ -516,7 +505,7 @@ impl Node for LLMAPINode {
 
         // Extract optional api_key
         let api_key_opt = inputs.get("api_key").and_then(|v| match v {
-            DataValue::String(s) => if s.is_empty() { None } else { Some(s.clone()) },
+            DataValue::Password(s) => if s.is_empty() { None } else { Some(s.clone()) },
             _ => None,
         });
 

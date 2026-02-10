@@ -239,7 +239,7 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
                 }
             };
 
-            // Now perform the save with the lock
+            // perform the save with the lock
             let mut tabs_guard = tabs_clone.lock().unwrap();
             let tab_index = match tabs_guard.iter().position(|t| t.id == tab_id) {
                 Some(index) => index,
@@ -714,9 +714,9 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
                                 if let Some(ui) = ui_weak.upgrade() {
                                     if active_tab_id == Some(tab_id) {
                                         if stop_flag.load(std::sync::atomic::Ordering::Relaxed) {
-                                            ui.set_connection_status("⏹ 节点图执行已停止".into());
+                                            ui.set_connection_status("节点图执行已停止".into());
                                         } else {
-                                            ui.set_connection_status("✓ 节点图执行成功".into());
+                                            ui.set_connection_status("节点图执行成功".into());
                                         }
                                         apply_graph_to_ui(
                                             &ui,
@@ -780,7 +780,7 @@ pub fn show_graph(initial_graph: Option<NodeGraphDefinition>) -> Result<()> {
 
                         if let Some(ui) = ui_handle.upgrade() {
                             if active_tab_id == Some(tab_id) {
-                                ui.set_connection_status("✓ 节点图执行成功".into());
+                                ui.set_connection_status("节点图执行成功".into());
                                 apply_graph_to_ui(
                                     &ui,
                                     &tab.graph,
@@ -1403,7 +1403,8 @@ fn apply_graph_to_ui(
                         }
                         crate::node::DataType::String
                         | crate::node::DataType::Integer
-                        | crate::node::DataType::Float => {
+                        | crate::node::DataType::Float
+                        | crate::node::DataType::Password => {
                             let value = match inline_inputs.get(&key) {
                                 Some(InlinePortValue::Text(v)) => v.clone(),
                                 Some(InlinePortValue::Bool(v)) => v.to_string(),

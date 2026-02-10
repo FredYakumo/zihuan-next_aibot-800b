@@ -3,7 +3,7 @@ use crate::bot_adapter::models::message::MessageProp;
 use crate::bot_adapter::models::MessageEvent;
 use crate::error::Result;
 use crate::llm::{Message, SystemMessage};
-use crate::node::{DataType, DataValue, Node, Port};
+use crate::node::{node_input, node_output, DataType, DataValue, Node, Port};
 use std::collections::HashMap;
 
 /// Build system message based on bot profile and event context
@@ -72,25 +72,15 @@ impl Node for ExtractMessageFromEventNode {
         Some("Converts MessageEvent to LLM prompt string")
     }
 
-    fn input_ports(&self) -> Vec<Port> {
-        vec![
-            Port::new("message_event", DataType::MessageEvent)
-                .with_description("MessageEvent containing message data"),
-            Port::new("bot_adapter", DataType::BotAdapterRef)
-                .with_description("BotAdapter reference for context-aware system message")
-                .with_required(true),
-            Port::new("persona", DataType::String)
-                .with_description("Optional persona/character description (default: 默认助手)")
-                .optional(),
-        ]
-    }
+    node_input![
+        port! { name = "message_event", ty = MessageEvent, desc = "MessageEvent containing message data" },
+        port! { name = "bot_adapter", ty = BotAdapterRef, desc = "BotAdapter reference for context-aware system message", required = true },
+        port! { name = "persona", ty = String, desc = "Optional persona/character description (default: 默认助手)", optional },
+    ];
 
-    fn output_ports(&self) -> Vec<Port> {
-        vec![
-            Port::new("messages", DataType::MessageList)
-                .with_description("MessageList containing system and user messages"),
-        ]
-    }
+    node_output![
+        port! { name = "messages", ty = MessageList, desc = "MessageList containing system and user messages" },
+    ];
 
     fn execute(&mut self, inputs: HashMap<String, DataValue>) -> Result<HashMap<String, DataValue>> {
         self.validate_inputs(&inputs)?;

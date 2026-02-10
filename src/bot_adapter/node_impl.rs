@@ -2,7 +2,7 @@ use crate::bot_adapter::adapter::{BotAdapter, BotAdapterConfig, SharedBotAdapter
 use crate::bot_adapter::event;
 use crate::bot_adapter::models::event_model::MessageEvent;
 use crate::error::Result;
-use crate::node::{DataType, DataValue, Node, NodeType, Port};
+use crate::node::{node_input, node_output, DataType, DataValue, Node, NodeType, Port};
 use log::{error, info};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -50,26 +50,16 @@ impl Node for BotAdapterNode {
         Some("QQ Bot Adapter - receives messages from QQ server")
     }
 
-    fn input_ports(&self) -> Vec<Port> {
-        vec![
-            Port::new("qq_id", DataType::String)
-                .with_description("QQ ID to login"),
-            Port::new("bot_server_url", DataType::String)
-                .with_description("Bot服务器WebSocket地址"),
-            Port::new("bot_server_token", DataType::String)
-                .with_description("Bot服务器连接令牌")
-                .optional(),
-        ]
-    }
+    node_input![
+        port! { name = "qq_id", ty = String, desc = "QQ ID to login" },
+        port! { name = "bot_server_url", ty = String, desc = "Bot服务器WebSocket地址" },
+        port! { name = "bot_server_token", ty = Password, desc = "Bot服务器连接令牌", optional },
+    ];
 
-    fn output_ports(&self) -> Vec<Port> {
-        vec![
-            Port::new("message_event", DataType::MessageEvent)
-                .with_description("Raw message event from QQ server"),
-            Port::new("bot_adapter", DataType::BotAdapterRef)
-                .with_description("Shared reference to the bot adapter instance")
-        ]
-    }
+    node_output![
+        port! { name = "message_event", ty = MessageEvent, desc = "Raw message event from QQ server" },
+        port! { name = "bot_adapter", ty = BotAdapterRef, desc = "Shared reference to the bot adapter instance" },
+    ];
 
     fn execute(&mut self, inputs: HashMap<String, DataValue>) -> Result<HashMap<String, DataValue>> {
         self.on_start(inputs)?;
@@ -108,7 +98,7 @@ impl Node for BotAdapterNode {
         let bot_server_token = inputs
             .get("bot_server_token")
             .and_then(|value| match value {
-                DataValue::String(s) => Some(s.clone()),
+                DataValue::Password(s) => Some(s.clone()),
                 _ => None,
             })
             .unwrap_or_else(|| std::env::var("BOT_SERVER_TOKEN").unwrap_or_default());
@@ -274,25 +264,16 @@ impl Node for MessageSenderNode {
         Some("Send message back to QQ server")
     }
 
-    fn input_ports(&self) -> Vec<Port> {
-        vec![
-            Port::new("target_id", DataType::String)
-                .with_description("Target user or group ID"),
-            Port::new("content", DataType::String)
-                .with_description("Message content to send"),
-            Port::new("message_type", DataType::String)
-                .with_description("Type of message to send"),
-        ]
-    }
+    node_input![
+        port! { name = "target_id", ty = String, desc = "Target user or group ID" },
+        port! { name = "content", ty = String, desc = "Message content to send" },
+        port! { name = "message_type", ty = String, desc = "Type of message to send" },
+    ];
 
-    fn output_ports(&self) -> Vec<Port> {
-        vec![
-            Port::new("success", DataType::Boolean)
-                .with_description("Whether the message was sent successfully"),
-            Port::new("response", DataType::Json)
-                .with_description("Response from the server"),
-        ]
-    }
+    node_output![
+        port! { name = "success", ty = Boolean, desc = "Whether the message was sent successfully" },
+        port! { name = "response", ty = Json, desc = "Response from the server" },
+    ];
 
     fn execute(&mut self, inputs: HashMap<String, DataValue>) -> Result<HashMap<String, DataValue>> {
         self.validate_inputs(&inputs)?;

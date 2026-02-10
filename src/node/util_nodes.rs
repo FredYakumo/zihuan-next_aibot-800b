@@ -1,5 +1,5 @@
 use crate::error::Result;
-use crate::node::{DataType, DataValue, Node, Port};
+use crate::node::{node_input, node_output, DataType, DataValue, Node, Port};
 use std::collections::HashMap;
 use std::sync::RwLock;
 use once_cell::sync::Lazy;
@@ -35,25 +35,16 @@ impl Node for ConditionalNode {
         Some("Conditional branching based on input condition")
     }
 
-    fn input_ports(&self) -> Vec<Port> {
-        vec![
-            Port::new("condition", DataType::Boolean)
-                .with_description("Condition to evaluate"),
-            Port::new("true_value", DataType::Json)
-                .with_description("Value to output if condition is true"),
-            Port::new("false_value", DataType::Json)
-                .with_description("Value to output if condition is false"),
-        ]
-    }
+    node_input![
+        port! { name = "condition", ty = Boolean, desc = "Condition to evaluate" },
+        port! { name = "true_value", ty = Json, desc = "Value to output if condition is true" },
+        port! { name = "false_value", ty = Json, desc = "Value to output if condition is false" },
+    ];
 
-    fn output_ports(&self) -> Vec<Port> {
-        vec![
-            Port::new("result", DataType::Json)
-                .with_description("Selected value based on condition"),
-            Port::new("branch_taken", DataType::String)
-                .with_description("Which branch was taken"),
-        ]
-    }
+    node_output![
+        port! { name = "result", ty = Json, desc = "Selected value based on condition" },
+        port! { name = "branch_taken", ty = String, desc = "Which branch was taken" },
+    ];
 
     fn execute(&mut self, inputs: HashMap<String, DataValue>) -> Result<HashMap<String, DataValue>> {
         self.validate_inputs(&inputs)?;
@@ -151,21 +142,14 @@ impl Node for JsonParserNode {
         Some("Parse JSON string to structured data")
     }
 
-    fn input_ports(&self) -> Vec<Port> {
-        vec![
-            Port::new("json_string", DataType::String)
-                .with_description("JSON string to parse"),
-        ]
-    }
+    node_input![
+        port! { name = "json_string", ty = String, desc = "JSON string to parse" },
+    ];
 
-    fn output_ports(&self) -> Vec<Port> {
-        vec![
-            Port::new("parsed", DataType::Json)
-                .with_description("Parsed JSON object"),
-            Port::new("success", DataType::Boolean)
-                .with_description("Whether parsing was successful"),
-        ]
-    }
+    node_output![
+        port! { name = "parsed", ty = Json, desc = "Parsed JSON object" },
+        port! { name = "success", ty = Boolean, desc = "Whether parsing was successful" },
+    ];
 
     fn execute(&mut self, inputs: HashMap<String, DataValue>) -> Result<HashMap<String, DataValue>> {
         self.validate_inputs(&inputs)?;
@@ -203,19 +187,11 @@ impl Node for PreviewStringNode {
         Some("Preview input string inside the node card")
     }
 
-    fn input_ports(&self) -> Vec<Port> {
-        vec![
-            Port::new("text", DataType::String)
-                .with_description("Text to preview inside the node")
-                .optional(),
-        ]
-    }
+    node_input![
+        port! { name = "text", ty = String, desc = "Text to preview inside the node", optional },
+    ];
 
-    fn output_ports(&self) -> Vec<Port> {
-        vec![
-
-        ]
-    }
+    node_output![];
 
     fn execute(&mut self, inputs: HashMap<String, DataValue>) -> Result<HashMap<String, DataValue>> {
         self.validate_inputs(&inputs)?;
@@ -243,16 +219,11 @@ impl Node for StringDataNode {
         Some("String data source with UI input field")
     }
 
-    fn input_ports(&self) -> Vec<Port> {
-        vec![]
-    }
+    node_input![];
 
-    fn output_ports(&self) -> Vec<Port> {
-        vec![
-            Port::new("text", DataType::String)
-                .with_description("Output string from UI input"),
-        ]
-    }
+    node_output![
+        port! { name = "text", ty = String, desc = "Output string from UI input" },
+    ];
 
     fn execute(&mut self, inputs: HashMap<String, DataValue>) -> Result<HashMap<String, DataValue>> {
         self.validate_inputs(&inputs)?;
@@ -268,7 +239,9 @@ impl Node for StringDataNode {
         self.validate_outputs(&outputs)?;
         Ok(outputs)
     }
-}impl Node for PreviewMessageListNode {
+}
+
+impl Node for PreviewMessageListNode {
     fn id(&self) -> &str {
         &self.id
     }
@@ -281,17 +254,11 @@ impl Node for StringDataNode {
         Some("Preview MessageList inside the node card with scrollable message items")
     }
 
-    fn input_ports(&self) -> Vec<Port> {
-        vec![
-            Port::new("messages", DataType::MessageList)
-                .with_description("MessageList to preview inside the node")
-                .optional(),
-        ]
-    }
+    node_input![
+        port! { name = "messages", ty = MessageList, desc = "MessageList to preview inside the node", optional },
+    ];
 
-    fn output_ports(&self) -> Vec<Port> {
-        vec![]
-    }
+    node_output![];
 
     fn execute(&mut self, inputs: HashMap<String, DataValue>) -> Result<HashMap<String, DataValue>> {
         self.validate_inputs(&inputs)?;
